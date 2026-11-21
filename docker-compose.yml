@@ -7,6 +7,10 @@ services:
       PORT: 3000
       HOST: 0.0.0.0
       DB_PATH: /data/worklay.sqlite
+      # Sign in with Google (optional). Set these in a .env file next to this compose file.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - worklay-data:/data
     restart: unless-stopped

@@ -26,6 +26,7 @@ const CATEGORIES = [
 const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
 const FEATURE_NAMES = ['Source File', 'Social Media Kit', 'High Resolution', 'Project Upload'];
 let PAYOUT_METHODS = ['PayPal', 'Payoneer', 'Bank transfer'];
+let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
 
 // Cities and their areas/districts. The live list comes from api/config.php.
 let CITIES = {
@@ -244,7 +245,7 @@ async function api(route, data) {
 }
 async function refresh() {
   db = await api('bootstrap');
-  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; }
+  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -348,12 +349,34 @@ function modal(html, onMount) {
 const closeModal = () => { $('#modal-root').innerHTML = ''; };
 
 function openLogin() { openAuth('login'); }
+const GOOGLE_G = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+// Messages for ?auth_error=… / ?welcome=… set by the server after the Google redirect.
+const GOOGLE_MESSAGES = {
+  google_disabled: ['Sign-in with Google is not available right now.', 'error'],
+  google_state: ['Your Google sign-in expired. Please try again.', 'error'],
+  google_cancelled: ['Google sign-in was cancelled.', ''],
+  google_unverified: ['Your Google email address is not verified, so we can’t use it to sign you in.', 'error'],
+  google_failed: ['Google sign-in failed. Please try again.', 'error'],
+};
+function handleGoogleReturn() {
+  const { q } = parseHash();
+  if (!q.auth_error && !q.welcome && !q.signed_in) return;
+  if (q.auth_error) { const [msg, kind] = GOOGLE_MESSAGES[q.auth_error] || GOOGLE_MESSAGES.google_failed; toast(msg, kind); }
+  else if (q.welcome === 'google') toast('Account created with Google! Add your city and area so people nearby can find you.', 'success');
+  else if (q.signed_in === 'google' && me()) toast(`Welcome back, ${esc(me().name.split(' ')[0])}!`, 'success');
+  const { name, args } = parseHash(), rest = { ...q }; delete rest.auth_error; delete rest.welcome; delete rest.signed_in;
+  const qs = new URLSearchParams(rest).toString();
+  history.replaceState(null, '', '#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
+}
 const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">Show</button></div>`;
 function openAuth(mode = 'login', intent = 'hire') {
   const err = '<p class="auth-err" role="alert" style="color:#d92d50;min-height:1.2em;margin:0 0 8px;font-size:.9rem"></p>';
   modal(`<div style="text-align:center;margin-bottom:18px"><svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#3858FF"/><path d="M7 10l4 13 5-9 5 9 4-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <h2 style="margin:8px 0 0">${mode === 'login' ? 'Welcome back' : 'Join Worklay'}</h2><p class="muted" style="margin:4px 0 0">${mode === 'login' ? 'Log in to your account' : 'Create your free account'}</p></div>
     <div class="tabs" style="width:100%;margin-bottom:18px"><button style="flex:1" class="${mode === 'login' ? 'active' : ''}" data-action="auth-tab" data-mode="login">Log in</button><button style="flex:1" class="${mode === 'signup' ? 'active' : ''}" data-action="auth-tab" data-mode="signup">Sign up</button></div>
+    ${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? 'Continue with Google' : 'Sign up with Google'}</button>
+      <p class="small muted" style="text-align:center;margin:8px 0 0">By continuing with Google you agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a>.</p>
+      <div class="auth-divider"><span>or</span></div>` : ''}
     ${mode === 'login' ? `<form id="login-form">
       <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>Password</label>${pwField('password', 'current-password')}</div>
@@ -998,6 +1021,10 @@ const A = {
   'cookie-accept': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, true]))),
   'cookie-reject': () => saveConsent({}),
   login: () => openLogin(),
+  'google-auth': () => {
+    const picked = document.querySelector('#signup-form input[name="intent"]:checked');
+    location.href = API_URL.replace(/\?.*$/, '') + '/auth/google?intent=' + (picked ? picked.value : 'hire');
+  },
   logout: () => act('auth/logout', {}, 'You have been logged out.', { after: () => { go('#/'); render(); } }),
   signup: el => openAuth('signup', el && el.dataset.intent),
   'toggle-filters': () => { const f = $('.filters'); if (f) { f.classList.toggle('open'); if (f.classList.contains('open')) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
@@ -1119,7 +1146,7 @@ $('#burger').onclick = () => $('#mainnav').classList.toggle('open');
 $('#year').textContent = new Date().getFullYear();
 lastRoute = location.hash.split('?')[0];
 $('#app').innerHTML = `<div class="container" style="padding-top:40px" aria-busy="true"><div class="skeleton" style="height:56px;max-width:520px;margin-bottom:16px"></div><div class="skeleton" style="height:22px;max-width:380px;margin-bottom:36px"></div><div class="grid">${'<div class="skeleton" style="height:230px"></div>'.repeat(4)}</div></div>`;
-refresh().then(render, err => {
+refresh().then(() => { render(); handleGoogleReturn(); }, err => {
   $('#app').innerHTML = `<div class="container">${empty('⚠️', esc(err.message), '<button class="btn btn-primary" onclick="location.reload()">Try again</button>')}</div>`;
 });
 

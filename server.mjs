@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Load settings such as GOOGLE_CLIENT_ID from a local .env file if there is one.
+try { process.loadEnvFile(path.join(__dirname, '.env')); } catch (e) { /* no .env file */ }
 const app = express();
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'worklay.sqlite');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -32,6 +34,11 @@ CREATE TABLE IF NOT EXISTS wl_sessions (token_hash TEXT PRIMARY KEY,user_id INTE
 CREATE TABLE IF NOT EXISTS wl_documents (user_id INTEGER PRIMARY KEY,mime TEXT NOT NULL,data BLOB NOT NULL);
 `;
 db.exec(schema);
+// Migration: link accounts to Google. Users who only sign in with Google have an empty pw_hash.
+if (!db.prepare('PRAGMA table_info(wl_users)').all().some(c => c.name === 'google_id')) {
+  db.exec('ALTER TABLE wl_users ADD COLUMN google_id TEXT NULL');
+}
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wl_users_google_id ON wl_users(google_id) WHERE google_id IS NOT NULL');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 app.use(express.json({ limit: '5mb' }));
@@ -68,7 +75,7 @@ function requireLogin(req, res) {
   return user;
 }
 function setAuth(res, token) {
-  res.setHeader('Set-Cookie', `worklay_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
+  res.append('Set-Cookie', `worklay_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
 }
 function passwordHash(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -78,11 +85,88 @@ function passwordHash(password) {
 function passwordVerify(password, stored) {
   const parts = String(stored).split('$');
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
-  return crypto.timingSafeEqual(Buffer.from(crypto.scryptSync(password, parts[1], 64).toString('hex')), Buffer.from(parts[2], 'hex'));
+  const expected = Buffer.from(parts[2], 'hex');
+  const actual = crypto.scryptSync(password, parts[1], 64);
+  return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
 }
 function notify(userId, type, text, link = '') {
   db.prepare('INSERT INTO wl_notifications(user_id,type,text,link) VALUES (?,?,?,?)').run(userId, type, text, link);
 }
+
+/* ---------- Sign in with Google (OAuth 2.0 authorization code flow + PKCE) ----------
+   Needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET. The redirect URI to register in Google
+   Cloud Console is <site origin>/api/auth/google/callback; set PUBLIC_URL in production so it
+   doesn't depend on request headers. */
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
+const googleEnabled = () => !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+const OAUTH_COOKIE = 'worklay_oauth';
+
+function publicOrigin(req) {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol).split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host).split(',')[0].trim();
+  return `${proto}://${host}`;
+}
+const googleRedirectUri = req => publicOrigin(req) + '/api/auth/google/callback';
+const isHttps = req => publicOrigin(req).startsWith('https://');
+
+app.get('/api/auth/google', (req, res) => {
+  if (!googleEnabled()) return res.redirect('/#/?auth_error=google_disabled');
+  const state = crypto.randomBytes(24).toString('hex');
+  const verifier = crypto.randomBytes(32).toString('base64url');
+  const intent = req.query.intent === 'work' ? 'work' : 'hire';
+  const value = encodeURIComponent(JSON.stringify({ state, verifier, intent }));
+  res.append('Set-Cookie', `${OAUTH_COOKIE}=${value}; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=600${isHttps(req) ? '; Secure' : ''}`);
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID, redirect_uri: googleRedirectUri(req), response_type: 'code',
+    scope: 'openid email profile', state, prompt: 'select_account',
+    code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256',
+  });
+  res.redirect('https://accounts.google.com/o/oauth2/v2/auth?' + params);
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  const fail = code => res.redirect('/#/?auth_error=' + code);
+  res.append('Set-Cookie', `${OAUTH_COOKIE}=; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=0`);
+  let saved = null;
+  try { saved = JSON.parse(parseCookies(req)[OAUTH_COOKIE] || 'null'); } catch (e) {}
+  if (!googleEnabled()) return fail('google_disabled');
+  if (!saved || typeof req.query.state !== 'string' || saved.state !== req.query.state) return fail('google_state');
+  if (req.query.error || typeof req.query.code !== 'string') return fail('google_cancelled');
+  try {
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code: req.query.code, client_id: GOOGLE_CLIENT_ID, client_secret: GOOGLE_CLIENT_SECRET, redirect_uri: googleRedirectUri(req), grant_type: 'authorization_code', code_verifier: saved.verifier }),
+    });
+    const tok = await r.json();
+    if (!r.ok || !tok.id_token) { console.error('Google token exchange failed:', tok.error || r.status); return fail('google_failed'); }
+    // The ID token came straight from Google's token endpoint over TLS, so its claims can be
+    // trusted without checking the signature; still check who issued it and for whom.
+    const claims = JSON.parse(Buffer.from(tok.id_token.split('.')[1], 'base64url').toString('utf8'));
+    if (!['https://accounts.google.com', 'accounts.google.com'].includes(claims.iss) || claims.aud !== GOOGLE_CLIENT_ID || claims.exp * 1000 < Date.now() || !claims.sub) return fail('google_failed');
+    if (!claims.email || claims.email_verified !== true) return fail('google_unverified');
+
+    const email = String(claims.email).toLowerCase();
+    let u = db.prepare('SELECT * FROM wl_users WHERE google_id=?').get(String(claims.sub));
+    let created = false;
+    if (!u) {
+      u = db.prepare('SELECT * FROM wl_users WHERE email=?').get(email);
+      if (u) db.prepare('UPDATE wl_users SET google_id=? WHERE id=?').run(String(claims.sub), u.id); // link existing account (Google verified the email)
+      else {
+        const info = db.prepare('INSERT INTO wl_users(name,email,pw_hash,google_id,is_freelancer,color) VALUES (?,?,?,?,?,?)')
+          .run(String(claims.name || email.split('@')[0]).slice(0, 60), email, '', String(claims.sub), saved.intent === 'work' ? 1 : 0, '#3858FF');
+        u = { id: info.lastInsertRowid };
+        created = true;
+      }
+    }
+    login(req, res, u.id);
+    return res.redirect(created ? '/#/dashboard/settings?welcome=google' : '/#/?signed_in=google');
+  } catch (error) {
+    console.error(error);
+    return fail('google_failed');
+  }
+});
 
 app.all('/api', upload.single('doc'), (req, res) => {
   const route = String(req.query.r || '');
@@ -106,7 +190,7 @@ app.all('/api', upload.single('doc'), (req, res) => {
         if (String(data.password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
         if (db.prepare('SELECT id FROM wl_users WHERE email=?').get(String(data.email).toLowerCase())) return res.status(400).json({ error: 'An account already exists with that email.' });
         const info = db.prepare('INSERT INTO wl_users(name,email,pw_hash,title,city,area,is_freelancer,category,color) VALUES (?,?,?,?,?,?,?,?,?)')
-          .run(String(data.name || ''), String(data.email).toLowerCase(), passwordHash(String(data.password)), String(data.title || ''), String(data.city || ''), String(data.area || ''), data.intent === 'seller' ? 1 : 0, String(data.category || ''), '#3858FF');
+          .run(String(data.name || ''), String(data.email).toLowerCase(), passwordHash(String(data.password)), String(data.title || ''), String(data.city || ''), String(data.area || ''), data.intent === 'work' ? 1 : 0, String(data.category || ''), '#3858FF');
         login(req, res, info.lastInsertRowid);
         return res.json({ ok: true, id: sid(info.lastInsertRowid) });
       }
@@ -297,7 +381,7 @@ function bootstrap(req, user) {
     id:sid(p.id),title:p.title,emoji:p.emoji,color:p.color,excerpt:p.excerpt,body:p.body,created:iso(p.created_at)
   }));
   return { me:user ? sid(user.id) : null, users,services,projects,proposals,orders,reviews,messages,notifications,wishlist,follows,payouts,posts,
-    config:{cities:CITIES,fee:0.10,minPayout:20,payoutMethods:['PayPal','Payoneer','Bank transfer']} };
+    config:{cities:CITIES,fee:0.10,minPayout:20,payoutMethods:['PayPal','Payoneer','Bank transfer'],googleAuth:googleEnabled()} };
 }
 
 function mutateProjectAward(req,res,user,data) {
