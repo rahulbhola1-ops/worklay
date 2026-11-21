@@ -8,7 +8,9 @@ import multer from 'multer';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const db = new Database(path.join(__dirname, 'worklay.sqlite'));
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'worklay.sqlite');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
@@ -349,5 +351,5 @@ if (!process.argv.includes('--dev')) {
 }
 
 const port = process.argv.includes('--dev') ? 3001 : Number(process.env.PORT || 5173);
-app.listen(port, '127.0.0.1', () => console.log(`Worklay Node API listening on http://127.0.0.1:${port}`));
+app.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`Worklay Node API listening on port ${port}`));
 

@@ -1,0 +1,15 @@
+services:
+  worklay:
+    build: .
+    ports:
+      - "3019:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      DB_PATH: /data/worklay.sqlite
+    volumes:
+      - worklay-data:/data
+    restart: unless-stopped
+
+volumes:
+  worklay-data:
