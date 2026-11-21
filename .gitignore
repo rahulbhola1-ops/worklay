@@ -11,3 +11,6 @@ worklay.sqlite-wal
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Local secrets
+.env

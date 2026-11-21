@@ -16,6 +16,8 @@ export const LEGAL = {
 export const COOKIES = [
   { name: 'worklay_auth', type: 'cookie', category: 'necessary', duration: { en: '30 days', et: '30 päeva' },
     purpose: { en: 'Keeps you logged in after you sign in. HttpOnly, only sent to Worklay.', et: 'Hoiab sind pärast sisselogimist sisse logituna. HttpOnly, saadetakse ainult Worklayle.' } },
+  { name: 'worklay_oauth', type: 'cookie', category: 'necessary', duration: { en: '10 minutes', et: '10 minutit' },
+    purpose: { en: 'Only set when you sign in with Google. Protects the sign-in against forgery and is deleted when you return.', et: 'Seatakse ainult Google’iga sisselogimisel. Kaitseb sisselogimist võltsimise eest ja kustutatakse, kui naased.' } },
   { name: 'worklay-lang', type: 'localStorage', category: 'necessary', duration: { en: 'Until you clear it', et: 'Kuni kustutad' },
     purpose: { en: 'Remembers the language you chose.', et: 'Jätab meelde sinu valitud keele.' } },
   { name: 'worklay-consent', type: 'localStorage', category: 'necessary', duration: { en: '6 months', et: '6 kuud' },
@@ -46,7 +48,7 @@ export function privacyPage(lang) {
 
     <h2>2. Milliseid andmeid me kogume</h2>
     <ul>
-      <li><b>Kontoandmed:</b> nimi, e-post, parool (salvestame ainult räsi), linn ja piirkond ning kas palkad või töötad vabakutselisena.</li>
+      <li><b>Kontoandmed:</b> nimi, e-post, parool (salvestame ainult räsi), linn ja piirkond ning kas palkad või töötad vabakutselisena. Kui registreerud Google’i kontoga, saame Google’ilt sinu nime, e-posti aadressi ja Google’i konto ID; sinu Google’i parooli me ei näe.</li>
       <li><b>Profiiliandmed:</b> ametinimetus, tutvustus, oskused, põhikategooria ja tunnihind, kui need lisad.</li>
       <li><b>Isikusamasuse kontroll:</b> dokumendi tüüp, failinimi ja üleslaaditud passi, juhiloa või ID-kaardi pilt.</li>
       <li><b>Sinu loodud sisu:</b> projektid, teenused, pakkumised, tellimused, arvustused, sõnumid, soovinimekiri ja jälgimised.</li>
@@ -70,12 +72,13 @@ export function privacyPage(lang) {
       <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi ja tellimusi näevad tehingu osapooled.</li>
       <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
       <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}), kes töötleb andmeid ainult meie juhiste järgi.</li>
+      <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
       <li><b>Makseteenuse pakkujad:</b> PayPal, Payoneer või sinu pank saavad väljamakse tegemiseks vajalikud andmed ja töötlevad neid iseseisva vastutava töötlejana.</li>
       <li><b>Ametiasutused:</b> kui seadus seda nõuab.</li>
     </ul>
 
     <h2>5. Andmete edastamine väljapoole EMP-d</h2>
-    <p>Hoiame andmeid Euroopa Majanduspiirkonnas. Kui valid väljamakse PayPali või Payoneeri kaudu, võivad need ettevõtted andmeid edastada väljapoole EMP-d, kasutades oma kaitsemeetmeid (nt Euroopa Komisjoni tüüptingimusi).</p>
+    <p>Hoiame andmeid Euroopa Majanduspiirkonnas. Kui kasutad Google’iga sisselogimist või valid väljamakse PayPali või Payoneeri kaudu, võivad need ettevõtted andmeid edastada väljapoole EMP-d, kasutades oma kaitsemeetmeid (nt Euroopa Komisjoni tüüptingimusi).</p>
 
     <h2>6. Kui kaua me andmeid hoiame</h2>
     <ul>
@@ -115,7 +118,7 @@ export function privacyPage(lang) {
 
     <h2>2. What data we collect</h2>
     <ul>
-      <li><b>Account data:</b> name, email, password (we only store a hash), city and area, and whether you hire or work as a freelancer.</li>
+      <li><b>Account data:</b> name, email, password (we only store a hash), city and area, and whether you hire or work as a freelancer. If you sign up with Google, we receive your name, email address and Google account ID from Google; we never see your Google password.</li>
       <li><b>Profile data:</b> headline, bio, skills, main category and rate, if you add them.</li>
       <li><b>Identity verification:</b> document type, file name and the image of your passport, driving license or ID card that you upload.</li>
       <li><b>Content you create:</b> projects, services, proposals, orders, reviews, messages, wishlist items and follows.</li>
@@ -139,12 +142,13 @@ export function privacyPage(lang) {
       <li><b>Other members:</b> messages are visible only to the recipient; proposals and orders are visible to the parties involved.</li>
       <li><b>Worklay administrators:</b> see verification documents, payout requests and contact messages only to handle them.</li>
       <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}), which processes data only on our instructions.</li>
+      <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
       <li><b>Payment providers:</b> PayPal, Payoneer or your bank receive the details needed to send a payout and handle them as independent controllers.</li>
       <li><b>Authorities:</b> when the law requires it.</li>
     </ul>
 
     <h2>5. Transfers outside the EEA</h2>
-    <p>We store data in the European Economic Area. If you choose a payout via PayPal or Payoneer, those companies may transfer data outside the EEA using their own safeguards (such as the European Commission’s Standard Contractual Clauses).</p>
+    <p>We store data in the European Economic Area. If you sign in with Google or choose a payout via PayPal or Payoneer, those companies may transfer data outside the EEA using their own safeguards (such as the European Commission’s Standard Contractual Clauses).</p>
 
     <h2>6. How long we keep your data</h2>
     <ul>
@@ -188,7 +192,7 @@ export function cookiesPage(lang) {
     <h2>Analüütika</h2>
     <p>Praegu me analüütika- ega reklaamiküpsiseid <b>ei kasuta</b>. Kui need tulevikus kasutusele võtame, lisame need siia ja aktiveerime ainult sinu nõusolekul.</p>
     <h2>Kolmandad osapooled</h2>
-    <p>Worklay ei laadi kolmandate osapoolte skripte, fonte ega jälgijaid.</p>
+    <p>Worklay ei laadi kolmandate osapoolte skripte, fonte ega jälgijaid. Kui valid Google’iga sisselogimise, suuname sind Google’i lehele, kus kehtivad Google’i enda küpsised ja privaatsuspoliitika.</p>
     <h2>Valikute muutmine</h2>
     <p>Saad oma valikuid igal ajal muuta või nõusoleku tagasi võtta. Küpsiseid saad kustutada ka brauseri seadetes; kui kustutad <code>worklay_auth</code>, logitakse sind välja.</p>
     <p><button class="btn btn-primary" data-action="cookie-settings">Muuda küpsiste seadeid</button></p>
@@ -204,7 +208,7 @@ export function cookiesPage(lang) {
     <h2>Analytics</h2>
     <p>We currently use <b>no</b> analytics or advertising cookies. If we introduce them, we will list them here and only turn them on with your consent.</p>
     <h2>Third parties</h2>
-    <p>Worklay does not load third-party scripts, fonts or trackers.</p>
+    <p>Worklay does not load third-party scripts, fonts or trackers. If you choose Sign in with Google, you are sent to Google’s own page, where Google’s cookies and privacy policy apply.</p>
     <h2>Changing your choices</h2>
     <p>You can change your choices or withdraw consent at any time. You can also delete cookies in your browser settings; deleting <code>worklay_auth</code> logs you out.</p>
     <p><button class="btn btn-primary" data-action="cookie-settings">Change cookie settings</button></p>

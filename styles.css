@@ -442,3 +442,9 @@ input.switch[type=checkbox]:focus-visible{outline:3px solid rgba(56,88,255,.4);o
 .hero-badges{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
 .hero-badges .pill-badge{margin-bottom:0}
 .hero-clock .clock-time{font-variant-numeric:tabular-nums;font-weight:600}
+
+/* ---------- Sign in with Google ---------- */
+.btn-google{gap:10px;background:#fff;color:#1f1f1f;border:1.5px solid #dadce0;font-weight:500}
+.btn-google:hover{background:#f8f9ff;border-color:#c6cad6}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted);font-size:.85rem}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;border-top:1px solid var(--line)}
