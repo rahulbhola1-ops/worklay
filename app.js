@@ -10,7 +10,6 @@ const apiUrl = (route, params = '') => API_URL + (API_URL.includes('?') ? '&' : 
 let PLATFORM_FEE = 0.10;
 let MIN_PAYOUT = 20;
 const LANG_KEY = 'worklay-lang';
-const AUTO_DETECT_LANG = false;      // true = pick language from visitor's location/browser; false = always start in English
 
 const CATEGORIES = [
   { id: 'dev', name: 'Development & IT', ico: '💻', color: '#eef1ff' },
@@ -48,40 +47,26 @@ const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.ar
 const proxTag = o => { const u = me(); if (!u || !u.city || u.id === o.id) return ''; const p = proximity(u, o); return p === 2 ? '<span class="tag green">📍 Your area</span>' : p === 1 ? '<span class="tag">📍 Your city</span>' : ''; };
 
 /* ---------- i18n ---------- */
-const LANGS = { en: 'English', et: 'Eesti', pt: 'Português', es: 'Español', de: 'Deutsch' };
+const LANGS = { en: 'English', et: 'Eesti' };
 const I18N = {
   en: {},
   et: {
-    'nav.freelancers': 'Leia tegija', 'nav.projects': 'Projektid', 'nav.services': 'Teenused', 'nav.blog': 'Blogi', 'nav.about': 'Meist', 'nav.contact': 'Kontakt',
+    'nav.freelancers': 'Leia vabakutselisi', 'nav.projects': 'Projektid', 'nav.services': 'Teenused', 'nav.blog': 'Blogi', 'nav.about': 'Meist', 'nav.contact': 'Kontakt',
     'cta.post': 'Postita projekt', 'cta.signin': 'Logi sisse', 'cta.login': 'Logi sisse', 'cta.signup': 'Registreeru', 'cta.search': 'Otsi',
     'hero.title': 'Leia tööd. Saa asjad tehtud.', 'hero.lead': 'Worklay ühendab ülesannetega inimesed vabakutseliste ja professionaalidega, kes otsivad tööd.',
     'hero.ph': 'Mida sa vajad?', 'home.how': 'Kuidas see töötab', 'home.cats': 'Sirvi kategooriaid', 'home.popular': 'Populaarsed teenused', 'home.latest': 'Uusimad projektid',
-    'footer.tag': 'Ühendame ülesanded inimestega, kes need ära teevad.', 'footer.platform': 'Platvorm', 'footer.company': 'Ettevõte', 'footer.language': 'Keel',
+    'footer.tag': 'Ühendame ülesanded inimestega, kes need ära teevad.', 'footer.platform': 'Platvorm', 'footer.company': 'Ettevõte',
     'common.viewall': 'Vaata kõiki', 'common.send': 'Saada', 'common.follow': 'Jälgi', 'common.following': 'Jälgid', 'common.message': 'Saada sõnum', 'common.order': 'Telli',
-  },
-  pt: {
-    'nav.freelancers': 'Encontrar freelancers', 'nav.projects': 'Projetos', 'nav.services': 'Serviços', 'nav.blog': 'Blog', 'nav.about': 'Sobre nós', 'nav.contact': 'Contacto',
-    'cta.post': 'Publicar projeto', 'cta.signin': 'Entrar', 'cta.login': 'Entrar', 'cta.signup': 'Registar', 'cta.search': 'Pesquisar',
-    'hero.title': 'Encontre trabalho. Faça acontecer.', 'hero.lead': 'A Worklay liga pessoas com tarefas a freelancers e profissionais à procura de trabalho.',
-    'hero.ph': 'Do que precisa?', 'home.how': 'Como funciona', 'home.cats': 'Explorar categorias', 'home.popular': 'Serviços populares', 'home.latest': 'Projetos recentes',
-    'footer.tag': 'Ligamos pessoas com tarefas aos profissionais que as concretizam.', 'footer.platform': 'Plataforma', 'footer.company': 'Empresa', 'footer.language': 'Idioma',
-    'common.viewall': 'Ver todos', 'common.send': 'Enviar', 'common.follow': 'Seguir', 'common.following': 'A seguir', 'common.message': 'Mensagem', 'common.order': 'Encomendar',
-  },
-  es: {
-    'nav.freelancers': 'Buscar freelancers', 'nav.projects': 'Proyectos', 'nav.services': 'Servicios', 'nav.blog': 'Blog', 'nav.about': 'Nosotros', 'nav.contact': 'Contacto',
-    'cta.post': 'Publicar proyecto', 'cta.signin': 'Iniciar sesión', 'cta.login': 'Iniciar sesión', 'cta.signup': 'Registrarse', 'cta.search': 'Buscar',
-    'hero.title': 'Encuentra trabajo. Hazlo realidad.', 'hero.lead': 'Worklay conecta a personas con tareas con freelancers y profesionales que buscan trabajo.',
-    'hero.ph': '¿Qué necesitas?', 'home.how': 'Cómo funciona', 'home.cats': 'Explorar categorías', 'home.popular': 'Servicios populares', 'home.latest': 'Proyectos recientes',
-    'footer.tag': 'Conectamos tareas con los profesionales que las realizan.', 'footer.platform': 'Plataforma', 'footer.company': 'Empresa', 'footer.language': 'Idioma',
-    'common.viewall': 'Ver todo', 'common.send': 'Enviar', 'common.follow': 'Seguir', 'common.following': 'Siguiendo', 'common.message': 'Mensaje', 'common.order': 'Pedir',
-  },
-  de: {
-    'nav.freelancers': 'Freelancer finden', 'nav.projects': 'Projekte', 'nav.services': 'Dienstleistungen', 'nav.blog': 'Blog', 'nav.about': 'Über uns', 'nav.contact': 'Kontakt',
-    'cta.post': 'Projekt erstellen', 'cta.signin': 'Anmelden', 'cta.login': 'Anmelden', 'cta.signup': 'Registrieren', 'cta.search': 'Suchen',
-    'hero.title': 'Arbeit finden. Arbeit erledigen.', 'hero.lead': 'Worklay verbindet Menschen mit Aufgaben mit Freelancern und Profis, die Arbeit suchen.',
-    'hero.ph': 'Was brauchst du?', 'home.how': "So funktioniert's", 'home.cats': 'Kategorien entdecken', 'home.popular': 'Beliebte Dienstleistungen', 'home.latest': 'Neueste Projekte',
-    'footer.tag': 'Wir verbinden Aufgaben mit den Profis, die sie erledigen.', 'footer.platform': 'Plattform', 'footer.company': 'Unternehmen', 'footer.language': 'Sprache',
-    'common.viewall': 'Alle ansehen', 'common.send': 'Senden', 'common.follow': 'Folgen', 'common.following': 'Folge ich', 'common.message': 'Nachricht', 'common.order': 'Bestellen',
+    'language.label': 'Keel', 'language.select': 'Vali keel', 'language.en': 'English', 'language.et': 'Eesti',
+    'hero.search': 'Otsi', 'hero.allCities': 'Kõik linnad', 'hero.searchIn': 'Otsi valdkonnas', 'hero.popular': 'Populaarne:', 'hero.hire': 'Palgata vabakutseline', 'hero.earn': 'Alusta teenimist →',
+    'hero.local': 'Kohalikud spetsialistid {count} Eesti linnas', 'hero.near': 'Spetsialistid sinu lähedal', 'hero.searchArea': 'Otsi linna ja piirkonna järgi',
+    'hero.verified': 'Kontrollitud vabakutselised', 'hero.idChecked': 'Meie meeskonna poolt kontrollitud', 'hero.proposals': 'Saa pakkumisi kiiresti', 'hero.postFree': 'Postita projekt tasuta',
+    'trust.cities': '{cities} linna, {areas} piirkonda', 'trust.nearby': 'Leia abi lähedalt', 'trust.verified': 'Isikutuvastusega spetsialistid', 'trust.documents': 'Dokumendid on kontrollitud', 'trust.pay': 'Maksa pärast töö valmimist', 'trust.release': 'Raha vabastatakse pärast sinu kinnitust', 'trust.free': 'Liitumine on tasuta', 'trust.post': 'Postita projekt tasuta',
+    'home.safe': 'Lihtne ja turvaline', 'home.customer': '🧑‍💼 Klientidele', 'home.freelancer': '🛠️ Vabakutselistele',
+    'home.postFree': 'Postita töö tasuta', 'home.describe': 'Kirjelda tööd, eelarvet ja asukohta.', 'home.compare': 'Võrdle pakkumisi', 'home.compareDesc': 'Kohalikud spetsialistid saadavad pakkumisi. Vaata arvustusi ja märke ning vestle enne otsustamist.', 'home.payHappy': 'Maksa, kui oled rahul', 'home.payHappyDesc': 'Kinnita töö ja tasu kantakse vabakutselisele.', 'home.createProfile': 'Loo profiil', 'home.chooseLocation': 'Vali linn ja piirkond, et lähedal asuvad kliendid sind leiaksid.', 'home.offerPackages': 'Paku teenusepakette või saada pakkumisi', 'home.setPrices': 'Määra ise Basicu, Standardi ja Premiumi paketihinnad.', 'home.getPaid': 'Saa tasu', 'home.withdraw': 'Võta teenistus välja PayPali, Payoneeri või pangaülekandega.',
+    'home.categoriesDesc': 'Leia sobiv tegija kodutöödest veebidisainini.', 'home.available': 'saadaval', 'home.first': 'Ole esimene', 'home.nearbyHead': 'Vabakutselised sinu linnas', 'home.nearbyLocation': 'Vabakutselised sinu lähedal linnas', 'home.pickCity': 'Vali linn, et näha lähedal saadaolevaid tegijaid.', 'home.firstFreelancer': 'Ole üks esimestest vabakutselistest', 'home.joinFreelancer': 'Liitu vabakutselisena', 'home.setupFreelancer': 'Seadista vabakutselise profiil', 'home.profileNearby': 'Loo tasuta profiil, vali linn ja piirkond ning leia lähedal asuvaid kliente.', 'home.readyPackages': 'Valmispaketid selgete hindadega.', 'home.noServices': 'Teenuseid veel pole', 'home.servicesDesc': 'Vabakutselised saavad pakkuda Basicu, Standardi ja Premiumi pakette enda määratud hinnaga.', 'home.jobsDesc': 'Tööd inimestelt, kes vajavad abi.', 'home.needDone': 'Vajad abi?', 'home.postProjectFree': 'Postita projekt tasuta ja saa pakkumisi lähedal asuvatelt vabakutselistelt.', 'home.earnOwn': 'Teeni enda tingimustel', 'home.offerLocal': 'Paku teenuseid enda hinnaga ja leia kliente oma piirkonnast.', 'home.browseProjects': 'Sirvi projekte',
+    'chip.cleaning': 'Koristus', 'chip.furniture': 'Mööbli kokkupanek', 'chip.logo': 'Logo kujundus', 'chip.web': 'Veebiarendus', 'chip.translation': 'Tõlge',
+    'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli',
   },
 };
 const EN = {
@@ -89,19 +74,25 @@ const EN = {
   'cta.post': 'Post a project', 'cta.signin': 'Sign in', 'cta.login': 'Log in', 'cta.signup': 'Sign up', 'cta.search': 'Search',
   'hero.title': 'Find work. Get work done.', 'hero.lead': 'Worklay connects people who need tasks done with freelancers and professionals looking for work.',
   'hero.ph': 'What do you need help with?', 'home.how': 'How it works', 'home.cats': 'Browse categories', 'home.popular': 'Popular services', 'home.latest': 'Latest projects',
-  'footer.tag': 'Connecting people with tasks to the professionals who get them done.', 'footer.platform': 'Platform', 'footer.company': 'Company', 'footer.language': 'Language',
+  'footer.tag': 'Connecting people with tasks to the professionals who get them done.', 'footer.platform': 'Platform', 'footer.company': 'Company',
   'common.viewall': 'View all', 'common.send': 'Send', 'common.follow': 'Follow', 'common.following': 'Following', 'common.message': 'Message', 'common.order': 'Order',
+  'language.label': 'Language', 'language.select': 'Select language', 'language.en': 'English', 'language.et': 'Estonian',
+  'hero.search': 'Search', 'hero.allCities': 'All cities', 'hero.searchIn': 'Search in', 'hero.popular': 'Popular:', 'hero.hire': 'Hire a freelancer', 'hero.earn': 'Start earning →',
+  'hero.local': 'Local professionals in {count} Estonian cities', 'hero.near': 'Professionals near you', 'hero.searchArea': 'Search by city and area',
+  'hero.verified': 'Verified freelancers', 'hero.idChecked': 'ID checked by our team', 'hero.proposals': 'Get proposals fast', 'hero.postFree': 'Post a project for free',
+  'trust.cities': '{cities} cities, {areas} areas', 'trust.nearby': 'Find help right around the corner', 'trust.verified': 'ID-verified professionals', 'trust.documents': 'Documents checked by our team', 'trust.pay': "Pay when it's done", 'trust.release': 'Released after you approve the work', 'trust.free': 'Free to join', 'trust.post': 'Post projects at no cost',
+  'home.safe': 'Simple & safe', 'home.customer': '🧑‍💼 For customers', 'home.freelancer': '🛠️ For freelancers',
+  'home.postFree': 'Post your job for free', 'home.describe': 'Describe what you need, your budget and where it is.', 'home.compare': 'Compare proposals', 'home.compareDesc': 'Local professionals send offers. Check their reviews and badges, and chat before you decide.', 'home.payHappy': "Pay when you're happy", 'home.payHappyDesc': 'Approve the work and payment is released to the freelancer.', 'home.createProfile': 'Create your profile', 'home.chooseLocation': 'Choose your city and area so nearby customers find you first.', 'home.offerPackages': 'Offer packages or send proposals', 'home.setPrices': 'Set your own prices in Basic, Standard and Premium tiers.', 'home.getPaid': 'Get paid', 'home.withdraw': 'Withdraw your earnings via PayPal, Payoneer or bank transfer.',
+  'home.categoriesDesc': 'From home repairs to web design: find the right person for the job.', 'home.available': 'available', 'home.first': 'Be the first', 'home.nearbyHead': 'Find freelancers in your city', 'home.nearbyLocation': 'Freelancers near you in', 'home.pickCity': "Pick a city to see who's available nearby.", 'home.firstFreelancer': 'Be one of the first freelancers', 'home.joinFreelancer': 'Join as a freelancer', 'home.setupFreelancer': 'Set up my freelancer profile', 'home.profileNearby': 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', 'home.readyPackages': 'Ready-made packages with clear prices.', 'home.noServices': 'No services yet', 'home.servicesDesc': 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', 'home.jobsDesc': 'Jobs posted by people who need a hand.', 'home.needDone': 'Need something done?', 'home.postProjectFree': 'Post your project for free and get proposals from freelancers near you.', 'home.earnOwn': 'Ready to earn on your own terms?', 'home.offerLocal': 'Offer your services at your own price and get found by customers in your area.', 'home.browseProjects': 'Browse projects',
+  'chip.cleaning': 'Cleaning', 'chip.furniture': 'Furniture assembly', 'chip.logo': 'Logo design', 'chip.web': 'Web development', 'chip.translation': 'Translation',
+  'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio',
 };
-let lang = 'en', langSource = 'default';
+let lang = 'en';
 const t = k => (I18N[lang] && I18N[lang][k]) || EN[k] || k;
+const numberLocale = () => lang === 'et' ? 'et-EE' : 'en';
 
-// Location-based language: browser locale + time zone (a real deployment would add IP geolocation server-side).
 function detectLang() {
   try { const saved = localStorage.getItem(LANG_KEY); if (saved && LANGS[saved]) return [saved, 'saved']; } catch (e) {}
-  if (!AUTO_DETECT_LANG) return ['en', 'default'];
-  const tz = (Intl.DateTimeFormat().resolvedOptions().timeZone || '');
-  const tzMap = { 'Europe/Tallinn': 'et', 'Europe/Lisbon': 'pt', 'America/Sao_Paulo': 'pt', 'Atlantic/Azores': 'pt', 'Europe/Madrid': 'es', 'America/Mexico_City': 'es', 'America/Bogota': 'es', 'America/Argentina/Buenos_Aires': 'es', 'Europe/Berlin': 'de', 'Europe/Vienna': 'de', 'Europe/Zurich': 'de' };
-  if (tzMap[tz]) return [tzMap[tz], 'location'];
   for (const l of (navigator.languages || [navigator.language || 'en'])) {
     const code = l.slice(0, 2).toLowerCase();
     if (LANGS[code]) return [code, 'browser'];
@@ -109,11 +100,29 @@ function detectLang() {
   return ['en', 'default'];
 }
 
+function flagSvg(code) {
+  if (code === 'et') return '<svg class="language-flag" viewBox="0 0 60 30" aria-hidden="true"><rect width="60" height="10" fill="#4891D9"/><rect y="10" width="60" height="10" fill="#111"/><rect y="20" width="60" height="10" fill="#fff"/></svg>';
+  return '<svg class="language-flag" viewBox="0 0 60 30" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0 0 60 30M60 0 0 30" stroke="#fff" stroke-width="6"/><path d="M0 0 60 30M60 0 0 30" stroke="#C8102E" stroke-width="2.5"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="5"/></svg>';
+}
+
+function languagePicker() {
+  return `<div class="language-picker" id="language-picker">
+    <button class="language-toggle" type="button" data-action="toggle-language" aria-label="${t('language.select')}" aria-haspopup="true" aria-expanded="false">
+      ${flagSvg(lang)}<span>${lang.toUpperCase()}</span><span class="language-chevron" aria-hidden="true">⌄</span>
+    </button>
+    <div class="language-menu" role="group" aria-label="${t('language.select')}">
+      ${Object.entries(LANGS).map(([code, name]) => `<button class="language-option ${code === lang ? 'active' : ''}" type="button" data-action="set-language" data-lang="${code}" aria-pressed="${code === lang}">
+        ${flagSvg(code)}<span>${t(`language.${code}`) || name}</span>${code === lang ? '<span class="language-check" aria-hidden="true">✓</span>' : ''}
+      </button>`).join('')}
+    </div>
+  </div>`;
+}
+
 /* ---------- utils ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = p => p + Math.random().toString(36).slice(2, 9);
-const money = n => '€' + Number(n).toLocaleString('en', { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const money = n => '€' + Number(n).toLocaleString(numberLocale(), { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 const now = () => new Date().toISOString();
 const daysAgo = d => new Date(Date.now() - d * 864e5).toISOString();
 function ago(iso) {
@@ -122,9 +131,9 @@ function ago(iso) {
   if (s < 3600) return Math.floor(s / 60) + 'm ago';
   if (s < 86400) return Math.floor(s / 3600) + 'h ago';
   if (s < 2592000) return Math.floor(s / 86400) + 'd ago';
-  return new Date(iso).toLocaleDateString('en', { month: 'short', year: 'numeric' });
+  return new Date(iso).toLocaleDateString(numberLocale(), { month: 'short', year: 'numeric' });
 }
-const monthYear = iso => new Date(iso).toLocaleDateString('en', { month: 'short', year: 'numeric' });
+const monthYear = iso => new Date(iso).toLocaleDateString(numberLocale(), { month: 'short', year: 'numeric' });
 const initials = n => n.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
 /* ---------- API ---------- */
@@ -345,7 +354,7 @@ function renderHeader() {
   const tabbar = $('#tabbar');
   document.body.classList.toggle('has-tabbar', !!u);
   if (!u) {
-    el.innerHTML = `<button class="btn btn-ghost" data-action="login">${t('cta.login')}</button><button class="btn btn-primary btn-sm" data-action="signup">${t('cta.signup')}</button>`;
+    el.innerHTML = `${languagePicker()}<button class="btn btn-ghost" data-action="login">${t('cta.login')}</button><button class="btn btn-primary btn-sm" data-action="signup">${t('cta.signup')}</button>`;
     if (tabbar) tabbar.innerHTML = '';
     return;
   }
@@ -358,7 +367,7 @@ function renderHeader() {
       + tab(u.isFreelancer ? '#/post-service' : '#/post-project', '＋', u.isFreelancer ? 'Offer' : 'Post', ['post-project', 'post-service'], 'post')
       + tab('#/messages', '💬', 'Messages', ['messages'], '', unreadM) + tab('#/dashboard', '👤', 'Me', ['dashboard', 'notifications', 'wishlist', 'user'], '', unreadN);
   }
-  el.innerHTML = `
+  el.innerHTML = `${languagePicker()}
     <a class="icon-btn hide-sm" href="#/wishlist" title="Wishlist">♡</a>
     <a class="icon-btn" href="#/messages" title="Messages">💬${unreadM ? `<span class="dot">${unreadM}</span>` : ''}</a>
     <a class="icon-btn" href="#/notifications" title="Notifications">🔔${unreadN ? `<span class="dot">${unreadN}</span>` : ''}</a>
@@ -376,77 +385,77 @@ V.home = () => {
   const popular = [...db.services].sort((a, b) => serviceRating(b.id).n - serviceRating(a.id).n).slice(0, 4);
   const u = me();
   const nearby = db.users.filter(x => x.isFreelancer && (!u || x.id !== u.id)).sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating).slice(0, 4);
-  const nearHead = u && u.city ? `Freelancers near you in ${esc(u.city)}` : 'Find freelancers in your city';
+  const nearHead = u && u.city ? `${t('home.nearbyLocation')} ${esc(u.city)}` : t('home.nearbyHead');
   const areaCount = Object.values(CITIES).reduce((a, l) => a + l.length, 0);
   const catCount = id => db.users.filter(x => x.isFreelancer && x.category === id).length + db.services.filter(s => s.category === id).length;
   const invite = (ico, title, text, btn) => `<div class="invite"><span class="ico">${ico}</span><div><h3>${title}</h3><p>${text}</p></div>${btn}</div>`;
-  const joinBtn = u ? '<a class="btn btn-primary" href="#/dashboard/settings">Set up my freelancer profile</a>' : '<button class="btn btn-primary" data-action="signup" data-intent="work">Join as a freelancer</button>';
+  const joinBtn = u ? `<a class="btn btn-primary" href="#/dashboard/settings">${t('home.setupFreelancer')}</a>` : `<button class="btn btn-primary" data-action="signup" data-intent="work">${t('home.joinFreelancer')}</button>`;
   return `
   <section class="hero"><div class="container hero-inner">
     <div>
-      <span class="pill-badge">📍 Local professionals in ${Object.keys(CITIES).length} Estonian cities</span>
+      <span class="pill-badge">📍 ${t('hero.local').replace('{count}', Object.keys(CITIES).length)}</span>
       <h1>${lang === 'en' ? 'Find trusted <span class="hl">local professionals</span> for any job' : t('hero.title')}</h1>
       <p class="lead">${t('hero.lead')}</p>
-      <form class="search-bar" id="hero-search"><input name="q" placeholder="${esc(t('hero.ph'))}" aria-label="Search"><select name="city" aria-label="City"><option value="">📍 All cities</option>${Object.keys(CITIES).map(c => `<option ${u && u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select><select name="type" aria-label="Search in"><option value="freelancers">Freelancers</option><option value="services">${t('nav.services')}</option><option value="projects">${t('nav.projects')}</option></select><button class="btn btn-primary">${t('cta.search')}</button></form>
-      <div class="chips"><span class="chips-label">Popular:</span>${['Cleaning', 'Furniture assembly', 'Logo design', 'Web development', 'Translation'].map(c => `<button class="chip" data-action="chip" data-q="${c}">${c}</button>`).join('')}</div>
-      ${u ? '' : `<div class="hero-ctas"><a class="btn btn-white btn-lg" href="#/post-project">Hire a freelancer</a><button class="btn btn-glass btn-lg" data-action="signup" data-intent="work">Start earning →</button></div>`}
+      <form class="search-bar" id="hero-search"><input name="q" placeholder="${esc(t('hero.ph'))}" aria-label="${t('hero.search')}"><select name="city" aria-label="${t('hero.searchArea')}"><option value="">📍 ${t('hero.allCities')}</option>${Object.keys(CITIES).map(c => `<option ${u && u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select><select name="type" aria-label="${t('hero.searchIn')}"><option value="freelancers">${t('nav.freelancers')}</option><option value="services">${t('nav.services')}</option><option value="projects">${t('nav.projects')}</option></select><button class="btn btn-primary">${t('cta.search')}</button></form>
+      <div class="chips"><span class="chips-label">${t('hero.popular')}</span>${[['Cleaning', 'chip.cleaning'], ['Furniture assembly', 'chip.furniture'], ['Logo design', 'chip.logo'], ['Web development', 'chip.web'], ['Translation', 'chip.translation']].map(([q, key]) => `<button class="chip" data-action="chip" data-q="${q}">${t(key)}</button>`).join('')}</div>
+      ${u ? '' : `<div class="hero-ctas"><a class="btn btn-white btn-lg" href="#/post-project">${t('hero.hire')}</a><button class="btn btn-glass btn-lg" data-action="signup" data-intent="work">${t('hero.earn')}</button></div>`}
     </div>
     <div class="hero-art" aria-hidden="true">
       <svg class="shape" style="left:40px;top:10px" width="54" height="54" viewBox="0 0 50 50"><path d="M25 3l20 40H5z" fill="#F4A6B4"/></svg>
       <svg class="shape" style="right:20px;top:60px;animation-delay:-2s" width="44" height="44" viewBox="0 0 50 50"><circle cx="25" cy="25" r="22" fill="#FFC233"/></svg>
       <svg class="shape" style="left:10px;bottom:30px;animation-delay:-4s" width="60" height="60" viewBox="0 0 50 50"><rect x="5" y="5" width="40" height="40" rx="10" fill="#7B5CF5"/></svg>
-      <div class="hero-card" style="left:70px;top:70px"><span class="avatar md" style="background:#eef1ff;color:#3858FF">📍</span><div><b>Professionals near you</b><small class="muted">Search by city and area</small></div></div>
-      <div class="hero-card" style="right:0;top:170px;animation-delay:-2s"><span class="avatar md" style="background:#e3f8ee;color:#17B26A">✓</span><div><b>Verified freelancers</b><small class="muted">ID checked by our team</small></div></div>
-      <div class="hero-card" style="left:30px;bottom:30px;animation-delay:-4s"><span class="avatar md" style="background:#fff0e7;color:#FF7A3D">📨</span><div><b>Get proposals fast</b><small class="muted">Post a project for free</small></div></div>
+      <div class="hero-card" style="left:70px;top:70px"><span class="avatar md" style="background:#eef1ff;color:#3858FF">📍</span><div><b>${t('hero.near')}</b><small class="muted">${t('hero.searchArea')}</small></div></div>
+      <div class="hero-card" style="right:0;top:170px;animation-delay:-2s"><span class="avatar md" style="background:#e3f8ee;color:#17B26A">✓</span><div><b>${t('hero.verified')}</b><small class="muted">${t('hero.idChecked')}</small></div></div>
+      <div class="hero-card" style="left:30px;bottom:30px;animation-delay:-4s"><span class="avatar md" style="background:#fff0e7;color:#FF7A3D">📨</span><div><b>${t('hero.proposals')}</b><small class="muted">${t('hero.postFree')}</small></div></div>
     </div>
   </div></section>
 
   <section class="container trust"><div class="trust-inner">
-    <div class="trust-item"><span class="ico" style="background:#eef1ff">📍</span><div><b>${Object.keys(CITIES).length} cities, ${areaCount} areas</b><span>Find help right around the corner</span></div></div>
-    <div class="trust-item"><span class="ico" style="background:#e3f8ee">🛡️</span><div><b>ID-verified professionals</b><span>Documents checked by our team</span></div></div>
-    <div class="trust-item"><span class="ico" style="background:#fff0e7">💶</span><div><b>Pay when it's done</b><span>Released after you approve the work</span></div></div>
-    <div class="trust-item"><span class="ico" style="background:#f0ebff">🆓</span><div><b>Free to join</b><span>Post projects at no cost</span></div></div>
+    <div class="trust-item"><span class="ico" style="background:#eef1ff">📍</span><div><b>${t('trust.cities').replace('{cities}', Object.keys(CITIES).length).replace('{areas}', areaCount)}</b><span>${t('trust.nearby')}</span></div></div>
+    <div class="trust-item"><span class="ico" style="background:#e3f8ee">🛡️</span><div><b>${t('trust.verified')}</b><span>${t('trust.documents')}</span></div></div>
+    <div class="trust-item"><span class="ico" style="background:#fff0e7">💶</span><div><b>${t('trust.pay')}</b><span>${t('trust.release')}</span></div></div>
+    <div class="trust-item"><span class="ico" style="background:#f0ebff">🆓</span><div><b>${t('trust.free')}</b><span>${t('trust.post')}</span></div></div>
   </div></section>
 
   <section class="section"><div class="container">
-    <div class="section-head"><div><div class="eyebrow">Simple & safe</div><h2>${t('home.how')}</h2></div></div>
+    <div class="section-head"><div><div class="eyebrow">${t('home.safe')}</div><h2>${t('home.how')}</h2></div></div>
     <div class="how">
-      <div class="how-col"><h3>🧑‍💼 For customers</h3><ol>
-        <li><div><b>Post your job for free</b>Describe what you need, your budget and where it is.</div></li>
-        <li><div><b>Compare proposals</b>Local professionals send offers. Check their reviews and badges, and chat before you decide.</div></li>
-        <li><div><b>Pay when you're happy</b>Approve the work and payment is released to the freelancer.</div></li></ol>
-        <a class="btn btn-primary" href="#/post-project">Post a project</a></div>
-      <div class="how-col alt"><h3>🛠️ For freelancers</h3><ol>
-        <li><div><b>Create your profile</b>Choose your city and area so nearby customers find you first.</div></li>
-        <li><div><b>Offer packages or send proposals</b>Set your own prices in Basic, Standard and Premium tiers.</div></li>
-        <li><div><b>Get paid</b>Withdraw your earnings via PayPal, Payoneer or bank transfer.</div></li></ol>
-        ${u ? '<a class="btn btn-outline" href="#/post-service">Offer a service</a>' : '<button class="btn btn-outline" data-action="signup" data-intent="work">Join as a freelancer</button>'}</div>
+      <div class="how-col"><h3>${t('home.customer')}</h3><ol>
+        <li><div><b>${t('home.postFree')}</b>${t('home.describe')}</div></li>
+        <li><div><b>${t('home.compare')}</b>${t('home.compareDesc')}</div></li>
+        <li><div><b>${t('home.payHappy')}</b>${t('home.payHappyDesc')}</div></li></ol>
+        <a class="btn btn-primary" href="#/post-project">${t('cta.post')}</a></div>
+      <div class="how-col alt"><h3>${t('home.freelancer')}</h3><ol>
+        <li><div><b>${t('home.createProfile')}</b>${t('home.chooseLocation')}</div></li>
+        <li><div><b>${t('home.offerPackages')}</b>${t('home.setPrices')}</div></li>
+        <li><div><b>${t('home.getPaid')}</b>${t('home.withdraw')}</div></li></ol>
+        ${u ? `<a class="btn btn-outline" href="#/post-service">${t('nav.services')}</a>` : `<button class="btn btn-outline" data-action="signup" data-intent="work">${t('cta.signup')}</button>`}</div>
     </div>
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
-    <div class="section-head"><div><h2>${t('home.cats')}</h2><p>From home repairs to web design: find the right person for the job.</p></div></div>
-    <div class="cat-grid">${CATEGORIES.map(c => { const n = catCount(c.id); return `<a class="cat" href="#/freelancers?cat=${c.id}"><span class="ico" style="background:${c.color}">${c.ico}</span><div><b>${c.name}</b><span>${n ? n + ' available' : 'Be the first'}</span></div></a>`; }).join('')}</div>
+    <div class="section-head"><div><h2>${t('home.cats')}</h2><p>${t('home.categoriesDesc')}</p></div></div>
+    <div class="cat-grid">${CATEGORIES.map(c => { const n = catCount(c.id); return `<a class="cat" href="#/freelancers?cat=${c.id}"><span class="ico" style="background:${c.color}">${c.ico}</span><div><b>${t(`category.${c.id}`)}</b><span>${n ? n + ' ' + t('home.available') : t('home.first')}</span></div></a>`; }).join('')}</div>
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
-    <div class="section-head"><div><h2>${nearHead}</h2><p>Pick a city to see who's available nearby.</p></div>${nearby.length ? `<a href="#/freelancers${u && u.city ? '?city=' + encodeURIComponent(u.city) : ''}">${t('common.viewall')} →</a>` : ''}</div>
-    ${nearby.length ? `<div class="grid">${nearby.map(freelancerCard).join('')}</div>` : invite('🙋', 'Be one of the first freelancers', 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', joinBtn)}
+    <div class="section-head"><div><h2>${nearHead}</h2><p>${t('home.pickCity')}</p></div>${nearby.length ? `<a href="#/freelancers${u && u.city ? '?city=' + encodeURIComponent(u.city) : ''}">${t('common.viewall')} →</a>` : ''}</div>
+    ${nearby.length ? `<div class="grid">${nearby.map(freelancerCard).join('')}</div>` : invite('🙋', t('home.firstFreelancer'), t('home.profileNearby'), joinBtn)}
     <div class="city-chips">${Object.keys(CITIES).map(c => `<a class="city-chip" href="#/freelancers?city=${encodeURIComponent(c)}">📍 ${c}</a>`).join('')}</div>
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
-    <div class="section-head"><div><h2>${t('home.popular')}</h2><p>Ready-made packages with clear prices.</p></div>${popular.length ? `<a href="#/services">${t('common.viewall')} →</a>` : ''}</div>
-    ${popular.length ? `<div class="grid">${popular.map(serviceCard).join('')}</div>` : invite('📦', 'No services yet', 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', u ? '<a class="btn btn-primary" href="#/post-service">Offer a service</a>' : joinBtn)}
+    <div class="section-head"><div><h2>${t('home.popular')}</h2><p>${t('home.readyPackages')}</p></div>${popular.length ? `<a href="#/services">${t('common.viewall')} →</a>` : ''}</div>
+    ${popular.length ? `<div class="grid">${popular.map(serviceCard).join('')}</div>` : invite('📦', t('home.noServices'), t('home.servicesDesc'), u ? `<a class="btn btn-primary" href="#/post-service">${t('nav.services')}</a>` : joinBtn)}
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
-    <div class="section-head"><div><h2>${t('home.latest')}</h2><p>Jobs posted by people who need a hand.</p></div>${latest.length ? `<a href="#/projects">${t('common.viewall')} →</a>` : ''}</div>
-    ${latest.length ? `<div class="grid">${latest.map(projectCard).join('')}</div>` : invite('📝', 'Need something done?', 'Post your project for free and get proposals from freelancers near you.', '<a class="btn btn-primary" href="#/post-project">Post a project</a>')}
+    <div class="section-head"><div><h2>${t('home.latest')}</h2><p>${t('home.jobsDesc')}</p></div>${latest.length ? `<a href="#/projects">${t('common.viewall')} →</a>` : ''}</div>
+    ${latest.length ? `<div class="grid">${latest.map(projectCard).join('')}</div>` : invite('📝', t('home.needDone'), t('home.postProjectFree'), `<a class="btn btn-primary" href="#/post-project">${t('cta.post')}</a>`)}
   </div></section>
 
-  <section class="container"><div class="cta-band"><div><h2>Ready to earn on your own terms?</h2><p style="color:#e4e8ff;margin:0">Offer your services at your own price and get found by customers in your area.</p></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">${u ? '<a class="btn btn-white" href="#/post-service">Offer a service</a>' : '<button class="btn btn-white" data-action="signup" data-intent="work">Join as a freelancer</button>'}<a class="btn btn-glass" href="#/projects">Browse projects</a></div></div></section>`;
+  <section class="container"><div class="cta-band"><div><h2>${t('home.earnOwn')}</h2><p style="color:#e4e8ff;margin:0">${t('home.offerLocal')}</p></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${u ? `<a class="btn btn-white" href="#/post-service">${t('nav.services')}</a>` : `<button class="btn btn-white" data-action="signup" data-intent="work">${t('cta.signup')}</button>`}<a class="btn btn-glass" href="#/projects">${t('home.browseProjects')}</a></div></div></section>`;
 };
 
 function filterSidebar(kind, q) {
@@ -852,6 +861,24 @@ function setQuery(patch) {
   go('#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
 }
 const A = {
+  'toggle-language': () => {
+    const picker = $('#language-picker');
+    const button = picker.querySelector('.language-toggle');
+    const open = picker.classList.toggle('open');
+    button.setAttribute('aria-expanded', String(open));
+  },
+  'set-language': el => {
+    if (!LANGS[el.dataset.lang]) return;
+    if (lang === el.dataset.lang) {
+      $('#language-picker').classList.remove('open');
+      $('#language-picker .language-toggle').setAttribute('aria-expanded', 'false');
+      return;
+    }
+    lang = el.dataset.lang;
+    try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+    document.documentElement.lang = lang;
+    render();
+  },
   login: () => openLogin(),
   logout: () => act('auth/logout', {}, 'You have been logged out.', { after: () => { go('#/'); render(); } }),
   signup: el => openAuth('signup', el && el.dataset.intent),
@@ -904,6 +931,13 @@ document.addEventListener('submit', e => { lastBtn = e.submitter || e.target.que
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-action]');
   if (!e.target.closest('#userdd')) { const dd = $('#userdd'); dd && dd.classList.remove('open'); }
+  if (!e.target.closest('#language-picker')) {
+    const picker = $('#language-picker');
+    if (picker) {
+      picker.classList.remove('open');
+      picker.querySelector('.language-toggle').setAttribute('aria-expanded', 'false');
+    }
+  }
   if (!el || !A[el.dataset.action]) return;
   if (el.dataset.action === 'close-modal-bg') { if (e.target === el) closeModal(); return; }
   if (el.tagName === 'BUTTON' || el.getAttribute('href') === '#') e.preventDefault();
@@ -918,7 +952,16 @@ document.addEventListener('change', e => {
     areaSel.disabled = !areas.length;
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeModal();
+    const picker = $('#language-picker');
+    if (picker) {
+      picker.classList.remove('open');
+      picker.querySelector('.language-toggle').setAttribute('aria-expanded', 'false');
+    }
+  }
+});
 
 /* ---------- forms ---------- */
 document.addEventListener('submit', e => {
@@ -948,12 +991,8 @@ document.addEventListener('submit', e => {
 });
 
 /* ---------- boot ---------- */
-[lang, langSource] = detectLang();
+[lang] = detectLang();
 document.documentElement.lang = lang;
-const sel = $('#lang-select');
-sel.innerHTML = Object.entries(LANGS).map(([k, v]) => `<option value="${k}" ${k === lang ? 'selected' : ''}>${v}</option>`).join('');
-$('#lang-note').textContent = { location: 'Detected from your location', browser: 'Detected from your browser', saved: 'Your saved choice', default: '' }[langSource];
-sel.onchange = () => { lang = sel.value; try { localStorage.setItem(LANG_KEY, lang); } catch (e) {} document.documentElement.lang = lang; $('#lang-note').textContent = 'Your saved choice'; render(); };
 $('#burger').onclick = () => $('#mainnav').classList.toggle('open');
 $('#year').textContent = new Date().getFullYear();
 lastRoute = location.hash.split('?')[0];

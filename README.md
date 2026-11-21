@@ -1,6 +1,7 @@
 # Worklay
 
 Worklay is a local Node.js application using Vite, TanStack Router, Express, and SQLite.
+The interface supports English and Estonian; use the flag menu in the top navigation to switch languages.
 
 ## Run locally
 
