@@ -52,14 +52,14 @@ export function privacyPage(lang) {
       <li><b>Profiiliandmed:</b> ametinimetus, tutvustus, oskused, põhikategooria ja tunnihind, kui need lisad.</li>
       <li><b>Isikusamasuse kontroll:</b> dokumendi tüüp, failinimi ja üleslaaditud passi, juhiloa või ID-kaardi pilt.</li>
       <li><b>Sinu loodud sisu:</b> projektid, teenused, pakkumised, tellimused, arvustused, sõnumid, soovinimekiri ja jälgimised.</li>
-      <li><b>Makse- ja väljamakseandmed:</b> tellimuste summad, saldo ja väljamaksetaotlused koos valitud meetodi ja andmetega (nt PayPali e-post või IBAN).</li>
+      <li><b>Makse- ja väljamakseandmed:</b> tellimuste summad, maksete olek, saldo ja väljamaksed. Kaardimakseid töötleb Stripe: kaardiandmed sisestad Stripe’i lehel ja Worklay neid ei näe ega salvesta. Vabakutseliste isikusamasuse ja pangaandmed kogub väljamaksete seadistamisel Stripe.</li>
       <li><b>Kontaktivorm:</b> nimi, e-post, teema ja sõnum.</li>
       <li><b>Tehnilised andmed:</b> sisselogimisseansi küpsis ja keele-eelistus. Meie majutusteenuse pakkuja võib turvalisuse tagamiseks lühiajaliselt logida IP-aadresse.</li>
     </ul>
 
     <h2>3. Miks me andmeid kasutame ja õiguslik alus</h2>
     <ul>
-      <li><b>Lepingu täitmine (GDPR art 6 lg 1 p b):</b> konto pidamine, turuplatsi toimimine, sõnumid, tellimused, maksed ja väljamaksed.</li>
+      <li><b>Lepingu täitmine (GDPR art 6 lg 1 p b):</b> konto pidamine, turuplatsi toimimine, sõnumid, tellimused, maksete vastuvõtmine ja hoidmine ning väljamaksed vabakutselistele.</li>
       <li><b>Õigustatud huvi (art 6 lg 1 p f):</b> isikusamasuse kontroll ja usaldusmärgid, pettuste ja kuritarvituste ennetamine, teenuse turvalisus ning kontaktivormile vastamine.</li>
       <li><b>Juriidiline kohustus (art 6 lg 1 p c):</b> raamatupidamisdokumentide säilitamine ja ametiasutuste päringutele vastamine.</li>
       <li><b>Nõusolek (art 6 lg 1 p a):</b> valikulised küpsised, kui neid kasutusele võtame. Nõusoleku saad igal ajal tagasi võtta.</li>
@@ -73,12 +73,13 @@ export function privacyPage(lang) {
       <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
       <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}), kes töötleb andmeid ainult meie juhiste järgi.</li>
       <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
+      <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Iirimaa) töötleb kaardimakseid, hoiab raha kuni töö kinnitamiseni, kontrollib vabakutseliste isikut ja teeb neile väljamakseid. Stripe on nende andmete osas iseseisev vastutav töötleja.</li>
       <li><b>Makseteenuse pakkujad:</b> PayPal, Payoneer või sinu pank saavad väljamakse tegemiseks vajalikud andmed ja töötlevad neid iseseisva vastutava töötlejana.</li>
       <li><b>Ametiasutused:</b> kui seadus seda nõuab.</li>
     </ul>
 
     <h2>5. Andmete edastamine väljapoole EMP-d</h2>
-    <p>Hoiame andmeid Euroopa Majanduspiirkonnas. Kui kasutad Google’iga sisselogimist või valid väljamakse PayPali või Payoneeri kaudu, võivad need ettevõtted andmeid edastada väljapoole EMP-d, kasutades oma kaitsemeetmeid (nt Euroopa Komisjoni tüüptingimusi).</p>
+    <p>Hoiame andmeid Euroopa Majanduspiirkonnas. Kui kasutad Google’iga sisselogimist, maksad kaardiga Stripe’i kaudu või valid väljamakse PayPali või Payoneeri kaudu, võivad need ettevõtted andmeid edastada väljapoole EMP-d, kasutades oma kaitsemeetmeid (nt Euroopa Komisjoni tüüptingimusi).</p>
 
     <h2>6. Kui kaua me andmeid hoiame</h2>
     <ul>
@@ -122,14 +123,14 @@ export function privacyPage(lang) {
       <li><b>Profile data:</b> headline, bio, skills, main category and rate, if you add them.</li>
       <li><b>Identity verification:</b> document type, file name and the image of your passport, driving license or ID card that you upload.</li>
       <li><b>Content you create:</b> projects, services, proposals, orders, reviews, messages, wishlist items and follows.</li>
-      <li><b>Payment and payout data:</b> order amounts, your balance and payout requests with the method and details you provide (e.g. PayPal email or IBAN).</li>
+      <li><b>Payment and payout data:</b> order amounts, payment status, your balance and payouts. Card payments are processed by Stripe: you enter your card details on Stripe’s page, and Worklay never sees or stores them. When freelancers set up payouts, Stripe collects their identity and bank details.</li>
       <li><b>Contact form:</b> name, email, subject and message.</li>
       <li><b>Technical data:</b> a login session cookie and your language preference. Our hosting provider may briefly log IP addresses for security.</li>
     </ul>
 
     <h2>3. Why we use your data and our legal bases</h2>
     <ul>
-      <li><b>Performing our contract with you (GDPR Art. 6(1)(b)):</b> running your account and the marketplace, messaging, orders, payments and payouts.</li>
+      <li><b>Performing our contract with you (GDPR Art. 6(1)(b)):</b> running your account and the marketplace, messaging, orders, taking and holding payments, and paying freelancers.</li>
       <li><b>Legitimate interests (Art. 6(1)(f)):</b> identity verification and trust badges, preventing fraud and abuse, keeping the service secure and replying to contact requests.</li>
       <li><b>Legal obligations (Art. 6(1)(c)):</b> keeping accounting records and responding to lawful requests from authorities.</li>
       <li><b>Consent (Art. 6(1)(a)):</b> optional cookies, if we ever introduce them. You can withdraw consent at any time.</li>
@@ -143,12 +144,13 @@ export function privacyPage(lang) {
       <li><b>Worklay administrators:</b> see verification documents, payout requests and contact messages only to handle them.</li>
       <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}), which processes data only on our instructions.</li>
       <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
+      <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Ireland) processes card payments, holds the money until the work is approved, verifies freelancers’ identity and pays them out. Stripe acts as an independent controller for this data.</li>
       <li><b>Payment providers:</b> PayPal, Payoneer or your bank receive the details needed to send a payout and handle them as independent controllers.</li>
       <li><b>Authorities:</b> when the law requires it.</li>
     </ul>
 
     <h2>5. Transfers outside the EEA</h2>
-    <p>We store data in the European Economic Area. If you sign in with Google or choose a payout via PayPal or Payoneer, those companies may transfer data outside the EEA using their own safeguards (such as the European Commission’s Standard Contractual Clauses).</p>
+    <p>We store data in the European Economic Area. If you sign in with Google, pay by card through Stripe or choose a payout via PayPal or Payoneer, those companies may transfer data outside the EEA using their own safeguards (such as the European Commission’s Standard Contractual Clauses).</p>
 
     <h2>6. How long we keep your data</h2>
     <ul>

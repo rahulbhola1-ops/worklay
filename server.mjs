@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
+import { createPayments, PLATFORM_FEE } from './payments.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load settings such as GOOGLE_CLIENT_ID from a local .env file if there is one.
@@ -40,6 +41,21 @@ if (!db.prepare('PRAGMA table_info(wl_users)').all().some(c => c.name === 'googl
 }
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS wl_users_google_id ON wl_users(google_id) WHERE google_id IS NOT NULL');
 
+// Card payments through Stripe Connect; disabled (manual payouts) without STRIPE_SECRET_KEY.
+const payments = createPayments({ db, notify, publicOrigin });
+const MIN_PAYOUT = 20;
+const netOf = amount => Math.round(Number(amount) * (1 - PLATFORM_FEE) * 100) / 100;
+// Run an async route and turn failures into a JSON error.
+function handleAsync(res, fn) {
+  return fn().catch(e => {
+    console.error(e);
+    if (res.headersSent) return;
+    const fromStripe = typeof e.type === 'string' && e.type.startsWith('Stripe');
+    res.status(fromStripe ? 502 : 500).json({ error: fromStripe ? `Payment provider error: ${e.message}` : 'Something went wrong. Please try again.' });
+  });
+}
+
+payments.registerRoutes(app, { me }); // before express.json: the Stripe webhook needs the raw body
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 app.use(express.json({ limit: '5mb' }));
 
@@ -281,8 +297,43 @@ app.all('/api', upload.single('doc'), (req, res) => {
       }
       case 'payout/request': {
         const u=requireLogin(req,res);if(!u)return;
-        db.prepare('INSERT INTO wl_payouts(user_id,amount,method,details) VALUES (?,?,?,?)').run(u.id,Number(data.amount||0),String(data.method||''),String(data.details||''));
+        if(payments.enabled)return res.status(400).json({error:'Payouts are sent automatically through Stripe.'});
+        const amount=Math.round(Number(data.amount||0)*100)/100;
+        if(!(amount>=MIN_PAYOUT))return res.status(400).json({error:`The minimum payout is €${MIN_PAYOUT}.`});
+        if(!String(data.details||'').trim())return res.status(400).json({error:'Please enter your account details.'});
+        const ok=db.transaction(()=>{
+          const r=db.prepare('UPDATE wl_users SET balance=balance-? WHERE id=? AND balance>=?').run(amount,u.id,amount);
+          if(!r.changes)return false;
+          db.prepare('INSERT INTO wl_payouts(user_id,amount,method,details) VALUES (?,?,?,?)').run(u.id,amount,String(data.method||''),String(data.details||''));
+          return true;
+        })();
+        if(!ok)return res.status(400).json({error:'You can’t withdraw more than your available balance.'});
         return res.json({ok:true});
+      }
+      case 'order/cancel': {
+        const u=requireLogin(req,res);if(!u)return;
+        const o=db.prepare('SELECT * FROM wl_orders WHERE id=?').get(Number(data.id));
+        if(!o||o.buyer_id!==u.id)return res.status(404).json({error:'Order not found.'});
+        if(o.status!=='awaiting_payment')return res.status(400).json({error:'Only unpaid orders can be cancelled here. Contact support for paid orders.'});
+        const p=db.prepare("SELECT * FROM wl_payments WHERE kind='order' AND order_id=? AND status IN ('pending','processing')").get(o.id);
+        if(p)payments.cancelPayment(p);
+        db.prepare("UPDATE wl_orders SET status='cancelled' WHERE id=? AND status='awaiting_payment'").run(o.id);
+        return res.json({ok:true});
+      }
+      case 'payments/connect': {
+        const u=requireLogin(req,res);if(!u)return;
+        if(!payments.enabled)return res.status(400).json({error:'Card payments are not set up.'});
+        return handleAsync(res,async()=>res.json({ok:true,url:await payments.onboardingLink(req,u)}));
+      }
+      case 'payments/status': {
+        const u=requireLogin(req,res);if(!u)return;
+        if(!payments.enabled)return res.json({ok:true});
+        return handleAsync(res,async()=>res.json({ok:true,...await payments.refreshAccount(u)}));
+      }
+      case 'payments/dashboard': {
+        const u=requireLogin(req,res);if(!u)return;
+        if(!payments.enabled)return res.status(400).json({error:'Card payments are not set up.'});
+        return handleAsync(res,async()=>res.json({ok:true,url:await payments.dashboardLink(u)}));
       }
       case 'contact/send':
         db.prepare('INSERT INTO wl_contacts(name,email,message) VALUES (?,?,?)').run(String(data.name||''),String(data.email||''),String(data.message||''));
@@ -324,10 +375,11 @@ function login(req, res, userId) {
 function bootstrap(req, user) {
   const mid = user ? user.id : 0;
   const admin = !!user && user.role === 'admin';
+  if (payments.enabled) payments.cleanupAbandoned();
   const users = db.prepare('SELECT * FROM wl_users ORDER BY id').all().map(u => {
     const self = u.id === mid;
     const stats = {
-      inQueue: db.prepare('SELECT COUNT(*) c FROM wl_orders WHERE seller_id=? AND status<>\'completed\'').get(u.id).c,
+      inQueue: db.prepare('SELECT COUNT(*) c FROM wl_orders WHERE seller_id=? AND status IN (\'in_queue\',\'delivered\')').get(u.id).c,
       doneServices: db.prepare('SELECT COUNT(*) c FROM wl_orders WHERE seller_id=? AND status=\'completed\'').get(u.id).c,
       doneProjects: db.prepare('SELECT COUNT(*) c FROM wl_projects WHERE awarded_to=? AND status=\'completed\'').get(u.id).c
     };
@@ -337,6 +389,7 @@ function bootstrap(req, user) {
       category: u.category, rate: u.rate, role: u.role, color: u.color, joined: iso(u.created_at),
       verification: { status: u.ver_status }, stats, balance: self ? u.balance : 0
     };
+    if (self && payments.enabled) out.payouts = payments.summary(u.id);
     if (self || admin) {
       out.email = u.email;
       out.verification = { status:u.ver_status,docType:u.ver_doc_type,fileName:u.ver_file_name,submitted:u.ver_submitted?iso(u.ver_submitted):null,reason:u.ver_reason,hasDoc:!!u.ver_file };
@@ -356,7 +409,8 @@ function bootstrap(req, user) {
   const proposals = mid ? db.prepare(`SELECT * FROM wl_proposals WHERE seller_id=? OR project_id IN (SELECT id FROM wl_projects WHERE owner_id=? ) ORDER BY id DESC`).all(mid,mid).map(p => ({
     id:sid(p.id),projectId:sid(p.project_id),sellerId:sid(p.seller_id),amount:p.amount,days:p.days,cover:p.cover,status:p.status,created:iso(p.created_at)
   })) : [];
-  const orders = mid ? db.prepare('SELECT * FROM wl_orders WHERE buyer_id=? OR seller_id=? ORDER BY id DESC').all(mid,mid).map(o => ({
+  // Sellers don't see orders until they're paid; nobody sees cancelled checkouts.
+  const orders = mid ? db.prepare('SELECT * FROM wl_orders WHERE status<>\'cancelled\' AND (buyer_id=? OR (seller_id=? AND status<>\'awaiting_payment\')) ORDER BY id DESC').all(mid,mid).map(o => ({
     id:sid(o.id),serviceId:sid(o.service_id),pkg:o.pkg,buyerId:sid(o.buyer_id),sellerId:sid(o.seller_id),
     price:o.price,status:o.status,created:iso(o.created_at)
   })) : [];
@@ -380,8 +434,9 @@ function bootstrap(req, user) {
   const posts = db.prepare('SELECT * FROM wl_posts ORDER BY id DESC').all().map(p=>({
     id:sid(p.id),title:p.title,emoji:p.emoji,color:p.color,excerpt:p.excerpt,body:p.body,created:iso(p.created_at)
   }));
-  return { me:user ? sid(user.id) : null, users,services,projects,proposals,orders,reviews,messages,notifications,wishlist,follows,payouts,posts,
-    config:{cities:CITIES,fee:0.10,minPayout:20,payoutMethods:['PayPal','Payoneer','Bank transfer'],googleAuth:googleEnabled()} };
+  const paymentList = payments.enabled && mid ? payments.listFor(mid, admin) : [];
+  return { me:user ? sid(user.id) : null, users,services,projects,proposals,orders,reviews,messages,notifications,wishlist,follows,payouts,posts,payments:paymentList,
+    config:{cities:CITIES,fee:PLATFORM_FEE,minPayout:MIN_PAYOUT,payoutMethods:['PayPal','Payoneer','Bank transfer'],googleAuth:googleEnabled(),cardPayments:payments.enabled} };
 }
 
 function mutateProjectAward(req,res,user,data) {
@@ -390,6 +445,13 @@ function mutateProjectAward(req,res,user,data) {
   if(!pr)return res.status(404).json({error:'Proposal not found.'});
   const project=db.prepare('SELECT * FROM wl_projects WHERE id=?').get(pr.project_id);
   if(!project||project.owner_id!==u.id)return res.status(403).json({error:'Project owner only.'});
+  if(project.status!=='open')return res.status(400).json({error:'This project has already been awarded.'});
+  if(payments.enabled) return handleAsync(res,async()=>{
+    // The project is awarded once the payment succeeds. Drop any earlier unfinished checkout for it.
+    db.prepare("SELECT * FROM wl_payments WHERE kind='project' AND project_id=? AND status='pending'").all(project.id).forEach(payments.cancelPayment);
+    const {url}=await payments.startCheckout(req,{kind:'project',buyer:u,sellerId:pr.seller_id,amount:pr.amount,title:`Project: ${project.title}`,projectId:project.id,proposalId:pr.id});
+    res.json({ok:true,checkoutUrl:url});
+  });
   db.prepare('UPDATE wl_projects SET status=\'awarded\',awarded_to=?,awarded_amount=? WHERE id=?').run(pr.seller_id,pr.amount,project.id);
   db.prepare('UPDATE wl_proposals SET status=? WHERE id=?').run('accepted',pr.id);
   notify(pr.seller_id,'project','You were awarded a project.',`#/project/${project.id}`);
@@ -400,8 +462,11 @@ function mutateProjectComplete(req,res,user,data) {
   const u=requireLogin(req,res);if(!u)return;
   const p=db.prepare('SELECT * FROM wl_projects WHERE id=?').get(Number(data.id));
   if(!p||p.owner_id!==u.id)return res.status(403).json({error:'Project owner only.'});
-  db.prepare('UPDATE wl_projects SET status=\'completed\' WHERE id=?').run(p.id);
-  if(p.awarded_to) db.prepare('UPDATE wl_users SET balance=balance+? WHERE id=?').run(p.awarded_amount||0,p.awarded_to);
+  if(p.status!=='awarded')return res.status(400).json({error:'Only projects in progress can be completed.'});
+  if(!db.prepare('UPDATE wl_projects SET status=\'completed\' WHERE id=? AND status=\'awarded\'').run(p.id).changes)return res.json({ok:true});
+  // Stripe: release the held payment. Manual mode (or projects awarded before Stripe): credit the balance.
+  if(!payments.release({projectId:p.id}) && p.awarded_to) db.prepare('UPDATE wl_users SET balance=balance+? WHERE id=?').run(netOf(p.awarded_amount||0),p.awarded_to);
+  if(p.awarded_to) notify(p.awarded_to,'payment','The customer approved your work and released the payment.','#/dashboard/earnings');
   return res.json({ok:true});
 }
 
@@ -412,8 +477,19 @@ function mutateOrder(req,res,user,data) {
   const packages=JSON.parse(service.packages||'[]');
   const pkg=packages[Number(data.pkg)||0];
   if(!pkg)return res.status(404).json({error:'Package not found.'});
+  if(service.seller_id===u.id)return res.status(400).json({error:'You can’t order your own service.'});
+  const price=Number(pkg.price||0);
+  if(payments.enabled) return handleAsync(res,async()=>{
+    // The seller only sees the order after the payment succeeds.
+    const orderId=db.prepare('INSERT INTO wl_orders(service_id,pkg,buyer_id,seller_id,price,requirements,status) VALUES (?,?,?,?,?,?,\'awaiting_payment\')')
+      .run(service.id,Number(data.pkg)||0,u.id,service.seller_id,price,String(data.requirements||'')).lastInsertRowid;
+    try {
+      const {url}=await payments.startCheckout(req,{kind:'order',buyer:u,sellerId:service.seller_id,amount:price,title:`${service.title} (${pkg.name||'Package'})`,orderId});
+      res.json({ok:true,id:sid(orderId),checkoutUrl:url});
+    } catch(e) { db.prepare('UPDATE wl_orders SET status=\'cancelled\' WHERE id=?').run(orderId); throw e; }
+  });
   const info=db.prepare('INSERT INTO wl_orders(service_id,pkg,buyer_id,seller_id,price,requirements) VALUES (?,?,?,?,?,?)')
-    .run(service.id,Number(data.pkg)||0,u.id,service.seller_id,Number(pkg.price||0),String(data.requirements||''));
+    .run(service.id,Number(data.pkg)||0,u.id,service.seller_id,price,String(data.requirements||''));
   notify(service.seller_id,'order','You have a new order.',`#/dashboard/orders`);
   return res.json({ok:true,id:sid(info.lastInsertRowid)});
 }
@@ -424,8 +500,15 @@ function mutateOrderStatus(req,res,user,data,status) {
   if(!o)return res.status(404).json({error:'Order not found.'});
   if(status==='delivered'&&o.seller_id!==u.id)return res.status(403).json({error:'Seller only.'});
   if(status==='completed'&&o.buyer_id!==u.id)return res.status(403).json({error:'Buyer only.'});
-  db.prepare('UPDATE wl_orders SET status=? WHERE id=?').run(status,o.id);
-  if(status==='completed')db.prepare('UPDATE wl_users SET balance=balance+? WHERE id=?').run(o.price,o.seller_id);
+  const from=status==='delivered'?['in_queue']:['in_queue','delivered'];
+  if(!from.includes(o.status))return res.status(400).json({error:'This order can’t be changed any more.'});
+  if(!db.prepare(`UPDATE wl_orders SET status=? WHERE id=? AND status IN (${from.map(()=>'?').join(',')})`).run(status,o.id,...from).changes)return res.json({ok:true});
+  if(status==='delivered')notify(o.buyer_id,'order','Your order was delivered. Please review and approve it.','#/dashboard/orders');
+  if(status==='completed'){
+    // Stripe: release the held payment. Manual mode (or orders placed before Stripe): credit the balance.
+    if(!payments.release({orderId:o.id}))db.prepare('UPDATE wl_users SET balance=balance+? WHERE id=?').run(netOf(o.price),o.seller_id);
+    notify(o.seller_id,'payment','The buyer approved your delivery and released the payment.','#/dashboard/earnings');
+  }
   return res.json({ok:true});
 }
 
