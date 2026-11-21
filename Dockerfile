@@ -30,7 +30,7 @@ WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.mjs ./
+COPY --from=build /app/server.mjs /app/payments.mjs ./
 
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node

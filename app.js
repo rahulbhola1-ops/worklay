@@ -27,6 +27,7 @@ const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
 const FEATURE_NAMES = ['Source File', 'Social Media Kit', 'High Resolution', 'Project Upload'];
 let PAYOUT_METHODS = ['PayPal', 'Payoneer', 'Bank transfer'];
 let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
+let CARD_PAYMENTS = false; // true when the server has Stripe configured: customers pay by card, freelancers are paid through Stripe
 
 // Cities and their areas/districts. The live list comes from api/config.php.
 let CITIES = {
@@ -245,7 +246,7 @@ async function api(route, data) {
 }
 async function refresh() {
   db = await api('bootstrap');
-  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; }
+  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -308,7 +309,7 @@ function statPills(id) {
   const s = userStats(id);
   return `<div class="stat-pills"><span class="pill blue"><b>${s.inQueue}</b>In Queue Service</span><span class="pill teal"><b>${s.doneProjects}</b>Complete Project</span><span class="pill amber"><b>${s.doneServices}</b>Complete Service</span></div>`;
 }
-const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>' }[st] || esc(st));
+const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>', awaiting_payment: '<span class="tag orange">Awaiting payment</span>', processing: '<span class="tag">Payment processing</span>', released: '<span class="tag orange">Waiting for payout setup</span>', transferring: '<span class="tag">Sending…</span>', transferred: '<span class="tag green">Sent to Stripe</span>', refunded: '<span class="tag gray">Refunded</span>', cancelled: '<span class="tag gray">Cancelled</span>' }[st] || esc(st));
 
 function serviceCard(s) {
   const u = user(s.sellerId), r = serviceRating(s.id);
@@ -358,8 +359,24 @@ const GOOGLE_MESSAGES = {
   google_unverified: ['Your Google email address is not verified, so we can’t use it to sign you in.', 'error'],
   google_failed: ['Google sign-in failed. Please try again.', 'error'],
 };
+const PAYMENT_MESSAGES = {
+  success: ['Payment received ✓ The money is held safely and released only after you approve the work.', 'success'],
+  processing: ['Your payment is being processed. We’ll let you know when it’s confirmed.', ''],
+  cancelled: ['Payment cancelled. You weren’t charged.', ''],
+  refunded: ['This project was already awarded, so your payment was refunded.', 'error'],
+  failed: ['We couldn’t confirm your payment. If you were charged, please contact support.', 'error'],
+};
 function handleGoogleReturn() {
   const { q } = parseHash();
+  if (q.payment || q.stripe) {
+    if (q.payment) { const [msg, kind] = PAYMENT_MESSAGES[q.payment] || PAYMENT_MESSAGES.failed; toast(msg, kind); }
+    if (q.stripe === 'error') toast('Couldn’t open Stripe. Please try again.', 'error');
+    if (q.stripe === 'return') api('payments/status', {}).then(r => refresh().then(() => { render(); toast(r.ready ? 'Payouts are set up ✓' : 'Stripe still needs a few details. You can continue setup any time.', r.ready ? 'success' : ''); })).catch(e => toast(esc(e.message), 'error'));
+    const { name, args } = parseHash(), rest = { ...q }; delete rest.payment; delete rest.stripe;
+    const qs = new URLSearchParams(rest).toString();
+    history.replaceState(null, '', '#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
+    return;
+  }
   if (!q.auth_error && !q.welcome && !q.signed_in) return;
   if (q.auth_error) { const [msg, kind] = GOOGLE_MESSAGES[q.auth_error] || GOOGLE_MESSAGES.google_failed; toast(msg, kind); }
   else if (q.welcome === 'google') toast('Account created with Google! Add your city and area so people nearby can find you.', 'success');
@@ -446,8 +463,10 @@ function openOrder(sid, idx) {
     <div class="list-item"><span>Package price</span><b>${money(pkg.price)}</b></div>
     <div class="list-item"><span>Delivery</span><span>${esc(pkg.delivery)}</span></div>
     <div class="field" style="margin-top:14px"><label>Requirements for the seller</label><textarea id="req" placeholder="Describe what you need…"></textarea></div>
-    <p class="small muted">The seller starts once you confirm. Payment is released to the seller only after you approve the delivery.</p>
-    <button class="btn btn-primary btn-block" data-action="confirm-order" data-id="${sid}" data-idx="${idx}">Pay ${money(pkg.price)}</button>`);
+    <p class="small muted">${CARD_PAYMENTS
+      ? '🔒 You’ll pay securely by card on Stripe. Worklay holds the money and only releases it to the seller after you approve the delivery.'
+      : 'The seller starts once you confirm. Payment is released to the seller only after you approve the delivery.'}</p>
+    <button class="btn btn-primary btn-block" data-action="confirm-order" data-id="${sid}" data-idx="${idx}">${CARD_PAYMENTS ? 'Continue to payment · ' : 'Pay '}${money(pkg.price)}</button>`);
 }
 
 function openPayout() {
@@ -496,6 +515,21 @@ function renderHeader() {
 
 /* ---------- views ---------- */
 const V = {};
+
+/* Earnings tab when payments go through Stripe Connect. */
+function stripeEarnings(u) {
+  const s = u.payouts || {}, mine = (db.payments || []).filter(p => p.sellerId === u.id);
+  const label = p => p.kind === 'order' ? (service((db.orders.find(o => o.id === p.orderId) || {}).serviceId) || {}).title || 'Service order' : (project(p.projectId) || {}).title || 'Project';
+  const setup = !s.connected
+    ? `<div><b>Set up payouts</b><div class="small muted">Connect your bank account through Stripe to receive your earnings. Stripe will ask for your ID and bank details; it only takes a few minutes.</div></div><button class="btn btn-primary" data-action="stripe-connect">Set up payouts</button>`
+    : !s.ready
+      ? `<div><b>Finish setting up payouts</b><div class="small muted">Stripe still needs some details before it can send you money. Earnings wait safely until you finish.</div></div><button class="btn btn-primary" data-action="stripe-connect">Continue setup</button>`
+      : `<div><b>✓ Payouts are on</b><div class="small muted">When a customer approves your work, your share is sent to your Stripe account and paid out to your bank automatically.</div></div><button class="btn btn-outline" data-action="stripe-dashboard">Open Stripe dashboard</button>`;
+  return `<h1>Earnings & payouts</h1>
+    <div class="kpis"><div class="kpi"><div class="muted small">Held until approval</div><div class="v">${money(s.held || 0)}</div></div><div class="kpi"><div class="muted small">Waiting for payout setup</div><div class="v">${money(s.waiting || 0)}</div></div><div class="kpi"><div class="muted small">Sent to your bank account</div><div class="v">${money(s.transferred || 0)}</div></div><div class="kpi"><div class="muted small">Platform fee</div><div class="v">${PLATFORM_FEE * 100}%</div></div></div>
+    <div class="card card-pad" style="margin-bottom:20px"><div class="list-item">${setup}</div></div>
+    <div class="card card-pad"><h3>Payments</h3>${mine.length ? mine.map(p => `<div class="list-item"><div><b>${esc(label(p))}</b><div class="small muted">Customer paid ${money(p.amount)} · fee ${money(p.fee)} · ${ago(p.created)}</div></div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.net)}</b>${statusTag(p.status)}</div></div>`).join('') : '<p class="muted">No payments yet. When customers pay for your services or projects, they appear here.</p>'}</div>`;
+}
 
 /* Live date and time (visitor's local time zone) shown in the home hero. */
 function clockParts(d = new Date()) {
@@ -823,6 +857,7 @@ V.dashboard = ([tab = 'overview']) => {
   const myProps = db.proposals.filter(p => p.sellerId === u.id);
   const orderRow = (o, asSeller) => { const s = service(o.serviceId), other = user(asSeller ? o.buyerId : o.sellerId), reviewed = db.reviews.some(r => r.orderId === o.id);
     let btn = '';
+    if (!asSeller && o.status === 'awaiting_payment') btn = `<button class="btn btn-outline btn-sm" data-action="cancel-order" data-id="${o.id}">Cancel</button>`;
     if (asSeller && o.status === 'in_queue') btn = `<button class="btn btn-primary btn-sm" data-action="deliver" data-id="${o.id}">Mark delivered</button>`;
     if (!asSeller && o.status === 'delivered') btn = `<button class="btn btn-primary btn-sm" data-action="accept-order" data-id="${o.id}">Approve & release payment</button>`;
     if (!asSeller && o.status === 'completed' && !reviewed) btn = `<button class="btn btn-outline btn-sm" data-action="review-order" data-id="${o.id}">Leave review</button>`;
@@ -859,7 +894,8 @@ V.dashboard = ([tab = 'overview']) => {
     <div class="card card-pad"><h3>Awarded projects</h3>${db.projects.filter(p => p.awardedTo === u.id).map(p => `<div class="list-item"><a href="#/project/${p.id}"><b>${esc(p.title)}</b></a><div style="display:flex;gap:10px;align-items:center"><b>${money(p.awardedAmount)}</b>${statusTag(p.status)}</div></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
     <h3 style="margin-top:24px">My services</h3><div class="grid">${db.services.filter(s => s.sellerId === u.id).map(serviceCard).join('') || '<p class="muted">You haven’t listed a service yet.</p>'}</div>`;
   if (tab === 'proposals') body = `<h1>My proposals</h1><div class="card card-pad">${myProps.length ? myProps.map(x => { const p = project(x.projectId); return `<div class="list-item"><div><a href="#/project/${p.id}"><b>${esc(p.title)}</b></a><div class="small muted">${money(x.amount)} · ${x.days} days · sent ${ago(x.created)}</div></div>${statusTag(x.status)}</div>`; }).join('') : empty('📨', 'No proposals sent yet.', '<a class="btn btn-primary" href="#/projects">Find projects</a>')}</div>`;
-  if (tab === 'earnings') { const pays = db.payouts.filter(p => p.userId === u.id); body = `<h1>Earnings & payouts</h1>
+  if (tab === 'earnings' && CARD_PAYMENTS) body = stripeEarnings(u);
+  else if (tab === 'earnings') { const pays = db.payouts.filter(p => p.userId === u.id); body = `<h1>Earnings & payouts</h1>
     <div class="kpis"><div class="kpi"><div class="muted small">Available</div><div class="v">${money(u.balance)}</div></div><div class="kpi"><div class="muted small">Pending payouts</div><div class="v">${money(pays.filter(p => p.status === 'pending').reduce((a, p) => a + p.amount, 0))}</div></div><div class="kpi"><div class="muted small">Withdrawn</div><div class="v">${money(pays.filter(p => p.status === 'paid').reduce((a, p) => a + p.amount, 0))}</div></div><div class="kpi"><div class="muted small">Platform fee</div><div class="v">${PLATFORM_FEE * 100}%</div></div></div>
     <div class="card card-pad" style="margin-bottom:20px"><div class="list-item"><div><b>Withdraw your earnings</b><div class="small muted">Payouts via ${PAYOUT_METHODS.join(', ')}. Earnings become available once a buyer confirms the job objectives were met.</div></div><button class="btn btn-primary" data-action="payout" ${u.balance < MIN_PAYOUT ? 'disabled' : ''}>Request payout</button></div></div>
     <div class="card card-pad"><h3>Payout history</h3>${pays.length ? pays.map(p => `<div class="list-item"><div><b>${money(p.amount)}</b> via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div>${statusTag(p.status)}</div>`).join('') : '<p class="muted">No payouts yet.</p>'}</div>`; }
@@ -937,6 +973,8 @@ V.admin = () => {
     <div class="card card-pad" style="margin-bottom:20px"><h3>Identity verification queue (${pending.length})</h3>
       ${pending.length ? pending.map(x => `<div class="list-item"><div style="display:flex;gap:12px;align-items:center">${avatar(x)}<div><b>${esc(x.name)}</b> <span class="muted small">${esc(x.email)}</span><div class="small muted">${esc(x.verification.docType)} · ${esc(x.verification.fileName)} · ${ago(x.verification.submitted)}</div></div></div>
       <div style="display:flex;gap:8px">${x.verification.hasDoc ? `<button class="btn btn-ghost btn-sm" data-action="view-doc" data-id="${x.id}">View document</button>` : '<span class="small muted">(file missing)</span>'}<button class="btn btn-outline btn-sm" data-action="verify" data-id="${x.id}" data-ok="0">Reject</button><button class="btn btn-primary btn-sm" data-action="verify" data-id="${x.id}" data-ok="1">Approve</button></div></div>`).join('') : '<p class="muted">No pending verifications.</p>'}</div>
+    ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Refunds and disputes are handled in the <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
+      ${(db.payments || []).length ? db.payments.slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div></div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.amount)}</b>${statusTag(p.status)}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
     <div class="card card-pad" style="margin-bottom:20px"><h3>Payout requests (${pays.length})</h3>
       ${pays.length ? pays.map(p => `<div class="list-item"><div><b>${esc(user(p.userId).name)}</b> — ${money(p.amount)} via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div><button class="btn btn-primary btn-sm" data-action="mark-paid" data-id="${p.id}">Mark as paid</button></div>`).join('') : '<p class="muted">No pending payouts.</p>'}</div>
     <div class="card card-pad"><h3>Contact form messages (${db.contacts.length})</h3>${db.contacts.length ? db.contacts.map(c => `<div class="list-item"><div><b>${esc(c.name)}</b> <span class="muted small">${esc(c.email)} · ${ago(c.date)}</span><p style="margin:4px 0 0">${esc(c.message)}</p></div></div>`).join('') : '<p class="muted">No messages.</p>'}</div></div>`;
@@ -1049,14 +1087,23 @@ const A = {
   propose: el => { if (requireLogin()) openProposal(el.dataset.id); },
   order: el => { if (requireLogin()) openOrder(el.dataset.id, +el.dataset.idx); },
   'confirm-order': el => act('order/create', { serviceId: el.dataset.id, pkg: +el.dataset.idx, requirements: ($('#req') || {}).value || '' },
-    'Order placed ✓ The seller has been notified.', { after: () => { closeModal(); go('#/dashboard/orders'); render(); } }),
+    null, { after: r => {
+      if (r.checkoutUrl) { location.href = r.checkoutUrl; return; } // Stripe Checkout
+      closeModal(); go('#/dashboard/orders'); render(); toast('Order placed ✓ The seller has been notified.', 'success'); } }),
+  'cancel-order': el => { if (confirm('Cancel this unpaid order?')) act('order/cancel', { id: el.dataset.id }, 'Order cancelled.'); },
+  'stripe-connect': () => act('payments/connect', {}, null, { after: r => { location.href = r.url; } }),
+  'stripe-dashboard': () => act('payments/dashboard', {}, null, { after: r => { window.open(r.url, '_blank', 'noopener'); render(); } }),
   deliver: el => act('order/deliver', { id: el.dataset.id }, 'Marked as delivered. The buyer has been notified.'),
   'accept-order': el => { const o = db.orders.find(x => x.id === el.dataset.id);
     act('order/accept', { id: o.id }, 'Payment released to the seller.', { after: () => { render(); openReview(o.sellerId, { orderId: o.id }); } }); },
   'review-order': el => { const o = db.orders.find(x => x.id === el.dataset.id); openReview(o.sellerId, { orderId: o.id }); },
   award: el => { const pr = db.proposals.find(x => x.id === el.dataset.id);
-    if (!confirm(`Award this project to ${user(pr.sellerId).name} for ${money(pr.amount)}?`)) return;
-    act('proposal/award', { id: pr.id }, `Project awarded to ${esc(user(pr.sellerId).name)} ✓`); },
+    if (!confirm(CARD_PAYMENTS
+      ? `Award this project to ${user(pr.sellerId).name}?\n\nYou'll pay ${money(pr.amount)} by card now. Worklay holds the money and releases it only after you confirm the work is done.`
+      : `Award this project to ${user(pr.sellerId).name} for ${money(pr.amount)}?`)) return;
+    act('proposal/award', { id: pr.id }, null, { after: r => {
+      if (r.checkoutUrl) { location.href = r.checkoutUrl; return; } // Stripe Checkout
+      render(); toast(`Project awarded to ${esc(user(pr.sellerId).name)} ✓`, 'success'); } }); },
   'complete-project': el => { const p = project(el.dataset.id); if (!confirm('Confirm the job objectives are met and release payment?')) return;
     act('project/complete', { id: p.id }, 'Payment released.', { after: () => { render(); openReview(p.awardedTo, { projectId: p.id }); } }); },
   payout: () => openPayout(),
