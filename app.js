@@ -474,6 +474,26 @@ function renderHeader() {
 /* ---------- views ---------- */
 const V = {};
 
+/* Live date and time (visitor's local time zone) shown in the home hero. */
+function clockParts(d = new Date()) {
+  const loc = lang === 'et' ? 'et-EE' : 'en-GB';
+  const date = d.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return { date: date.charAt(0).toUpperCase() + date.slice(1), time: d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', second: '2-digit' }), iso: d.toISOString() };
+}
+function liveClock() {
+  const c = clockParts();
+  return `<span class="pill-badge hero-clock" id="live-clock">🕒 <span class="clock-date">${c.date}</span><span aria-hidden="true">·</span><time class="clock-time" datetime="${c.iso}">${c.time}</time></span>`;
+}
+function tickClock() {
+  const el = document.getElementById('live-clock');
+  if (el) {
+    const c = clockParts();
+    el.querySelector('.clock-date').textContent = c.date;
+    const tm = el.querySelector('.clock-time'); tm.textContent = c.time; tm.setAttribute('datetime', c.iso);
+  }
+  setTimeout(tickClock, 1000 - (Date.now() % 1000)); // stay aligned to the start of each second
+}
+
 V.home = () => {
   const latest = [...db.projects].filter(p => p.status === 'open').sort((a, b) => b.created.localeCompare(a.created)).slice(0, 3);
   const popular = [...db.services].sort((a, b) => serviceRating(b.id).n - serviceRating(a.id).n).slice(0, 4);
@@ -487,7 +507,7 @@ V.home = () => {
   return `
   <section class="hero"><div class="container hero-inner">
     <div>
-      <span class="pill-badge">📍 ${t('hero.local').replace('{count}', Object.keys(CITIES).length)}</span>
+      <div class="hero-badges"><span class="pill-badge">📍 ${t('hero.local').replace('{count}', Object.keys(CITIES).length)}</span>${liveClock()}</div>
       <h1>${lang === 'en' ? 'Find trusted <span class="hl">local professionals</span> for any job' : t('hero.title')}</h1>
       <p class="lead">${t('hero.lead')}</p>
       <form class="search-bar" id="hero-search"><input name="q" placeholder="${esc(t('hero.ph'))}" aria-label="${t('hero.search')}"><select name="city" aria-label="${t('hero.searchArea')}"><option value="">📍 ${t('hero.allCities')}</option>${Object.keys(CITIES).map(c => `<option ${u && u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select><select name="type" aria-label="${t('hero.searchIn')}"><option value="freelancers">${t('nav.freelancers')}</option><option value="services">${t('nav.services')}</option><option value="projects">${t('nav.projects')}</option></select><button class="btn btn-primary">${t('cta.search')}</button></form>
@@ -1093,6 +1113,7 @@ document.addEventListener('submit', e => {
 [lang] = detectLang();
 document.documentElement.lang = lang;
 renderCookieBanner();
+tickClock();
 { const c = readConsent(); if (c) { activateConsentedScripts(c); window.dispatchEvent(new CustomEvent('worklay:consent', { detail: { ...c } })); } }
 $('#burger').onclick = () => $('#mainnav').classList.toggle('open');
 $('#year').textContent = new Date().getFullYear();
