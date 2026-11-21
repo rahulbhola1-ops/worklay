@@ -39,7 +39,6 @@ function App() {
           </div>
           <div><h4 data-i18n="footer.platform">Platform</h4><a href="#/freelancers" data-i18n="nav.freelancers">Find freelancers</a><a href="#/projects" data-i18n="nav.projects">Projects</a><a href="#/services" data-i18n="nav.services">Services</a><a href="#/post-project" data-i18n="cta.post">Post a project</a></div>
           <div><h4 data-i18n="footer.company">Company</h4><a href="#/about" data-i18n="nav.about">About</a><a href="#/blog" data-i18n="nav.blog">Blog</a><a href="#/contact" data-i18n="nav.contact">Contact</a></div>
-          <div><h4 data-i18n="footer.language">Language</h4><select id="lang-select" aria-label="Language"></select><p className="muted-light small" id="lang-note"></p></div>
         </div>
         <div className="container footer-bottom">© <span id="year"></span> Worklay</div>
       </footer>

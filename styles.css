@@ -32,6 +32,16 @@ h1{font-weight:700} h2{font-weight:700} h3{font-weight:600}
 .mainnav a.active{color:var(--brand);background:var(--brand-soft)}
 .mainnav a:hover{color:var(--brand)}
 .topbar-actions{display:flex;align-items:center;gap:8px}
+.language-picker{position:relative}
+.language-toggle{display:flex;align-items:center;gap:7px;height:42px;padding:0 10px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink-2);font:inherit;font-size:.85rem;font-weight:500;cursor:pointer}
+.language-toggle:hover,.language-picker.open .language-toggle{border-color:var(--brand);color:var(--brand)}
+.language-flag{display:block;width:24px;height:16px;border-radius:3px;box-shadow:0 0 0 1px rgba(20,22,43,.12);flex-shrink:0}
+.language-chevron{font-size:.95rem;line-height:1}
+.language-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;display:none;min-width:160px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg)}
+.language-picker.open .language-menu{display:grid;gap:2px}
+.language-option{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:inherit;font-size:.9rem;font-weight:500;text-align:left;cursor:pointer}
+.language-option:hover,.language-option.active{background:var(--brand-soft);color:var(--brand)}
+.language-check{margin-left:auto;font-weight:700}
 .burger{display:none;background:none;border:0;font-size:1.5rem;cursor:pointer;color:var(--ink);width:40px;height:40px;border-radius:10px}
 .icon-btn{position:relative;width:42px;height:42px;border-radius:12px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;cursor:pointer;color:var(--ink-2);font-size:1.05rem;transition:.15s}
 .icon-btn:hover{border-color:var(--brand);color:var(--brand);transform:translateY(-1px)}
@@ -317,11 +327,10 @@ textarea{min-height:120px;resize:vertical}
 
 /* ---------- Footer ---------- */
 .footer{background:#12142f;color:#fff;margin-top:80px;padding:60px 0 24px}
-.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1.2fr;gap:30px}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:30px}
 .footer h4{color:#fff;font-size:.95rem;margin-bottom:12px}
 .footer a{display:block;color:#b9c1ee;padding:4px 0;transition:.15s}
 .footer a:hover{color:#fff}
-.footer select{background:#1d2045;border-color:#2c3062;color:#fff}
 .footer-bottom{border-top:1px solid rgba(255,255,255,.1);margin-top:36px;padding-top:20px;color:#8a92c4;font-size:.88rem;display:flex;gap:8px}
 
 /* ---------- Mobile tab bar ---------- */
