@@ -1,6 +1,8 @@
 /* Worklay front end. Talks to the Node API under /api.
    `db` holds what the server says the current visitor may see; every change goes
    through the API and then reloads that data. */
+import { privacyPage, cookiesPage } from './legal.js';
+
 (() => {
 'use strict';
 
@@ -67,6 +69,12 @@ const I18N = {
     'home.categoriesDesc': 'Leia sobiv tegija kodutöödest veebidisainini.', 'home.available': 'saadaval', 'home.first': 'Ole esimene', 'home.nearbyHead': 'Vabakutselised sinu linnas', 'home.nearbyLocation': 'Vabakutselised sinu lähedal linnas', 'home.pickCity': 'Vali linn, et näha lähedal saadaolevaid tegijaid.', 'home.firstFreelancer': 'Ole üks esimestest vabakutselistest', 'home.joinFreelancer': 'Liitu vabakutselisena', 'home.setupFreelancer': 'Seadista vabakutselise profiil', 'home.profileNearby': 'Loo tasuta profiil, vali linn ja piirkond ning leia lähedal asuvaid kliente.', 'home.readyPackages': 'Valmispaketid selgete hindadega.', 'home.noServices': 'Teenuseid veel pole', 'home.servicesDesc': 'Vabakutselised saavad pakkuda Basicu, Standardi ja Premiumi pakette enda määratud hinnaga.', 'home.jobsDesc': 'Tööd inimestelt, kes vajavad abi.', 'home.needDone': 'Vajad abi?', 'home.postProjectFree': 'Postita projekt tasuta ja saa pakkumisi lähedal asuvatelt vabakutselistelt.', 'home.earnOwn': 'Teeni enda tingimustel', 'home.offerLocal': 'Paku teenuseid enda hinnaga ja leia kliente oma piirkonnast.', 'home.browseProjects': 'Sirvi projekte',
     'chip.cleaning': 'Koristus', 'chip.furniture': 'Mööbli kokkupanek', 'chip.logo': 'Logo kujundus', 'chip.web': 'Veebiarendus', 'chip.translation': 'Tõlge',
     'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli',
+    'footer.legal': 'Õiguslik', 'legal.privacy': 'Privaatsuspoliitika', 'legal.cookies': 'Küpsiste poliitika', 'legal.cookieSettings': 'Küpsiste seaded',
+    'cookie.title': 'Sinu privaatsus', 'cookie.text': 'Kasutame ainult küpsiseid, mis on vajalikud sisselogimiseks ja sinu valikute meelespidamiseks. Analüütika- ja reklaamiküpsiseid kasutame ainult sinu nõusolekul.',
+    'cookie.accept': 'Nõustu kõigiga', 'cookie.reject': 'Keeldu valikulistest', 'cookie.customize': 'Kohanda', 'cookie.save': 'Salvesta valikud', 'cookie.saved': 'Küpsiste valikud salvestatud',
+    'cookie.settingsIntro': 'Vali, milliseid küpsiseid lubad. Hädavajalikud küpsised on alati sees, sest sait ei tööta ilma nendeta.',
+    'cookie.necessary': 'Hädavajalikud', 'cookie.necessaryDesc': 'Sisselogimine, keele-eelistus ja need küpsiste valikud.', 'cookie.alwaysOn': 'Alati sees',
+    'cookie.analytics': 'Analüütika', 'cookie.analyticsDesc': 'Aitab meil mõista, kuidas saiti kasutatakse. Praegu ei kasuta me analüütikatööriistu, seega selle lubamine midagi ei muuda.',
   },
 };
 const EN = {
@@ -86,6 +94,12 @@ const EN = {
   'home.categoriesDesc': 'From home repairs to web design: find the right person for the job.', 'home.available': 'available', 'home.first': 'Be the first', 'home.nearbyHead': 'Find freelancers in your city', 'home.nearbyLocation': 'Freelancers near you in', 'home.pickCity': "Pick a city to see who's available nearby.", 'home.firstFreelancer': 'Be one of the first freelancers', 'home.joinFreelancer': 'Join as a freelancer', 'home.setupFreelancer': 'Set up my freelancer profile', 'home.profileNearby': 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', 'home.readyPackages': 'Ready-made packages with clear prices.', 'home.noServices': 'No services yet', 'home.servicesDesc': 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', 'home.jobsDesc': 'Jobs posted by people who need a hand.', 'home.needDone': 'Need something done?', 'home.postProjectFree': 'Post your project for free and get proposals from freelancers near you.', 'home.earnOwn': 'Ready to earn on your own terms?', 'home.offerLocal': 'Offer your services at your own price and get found by customers in your area.', 'home.browseProjects': 'Browse projects',
   'chip.cleaning': 'Cleaning', 'chip.furniture': 'Furniture assembly', 'chip.logo': 'Logo design', 'chip.web': 'Web development', 'chip.translation': 'Translation',
   'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio',
+  'footer.legal': 'Legal', 'legal.privacy': 'Privacy Policy', 'legal.cookies': 'Cookie Policy', 'legal.cookieSettings': 'Cookie settings',
+  'cookie.title': 'Your privacy', 'cookie.text': 'We only use cookies that are needed to log you in and remember your choices. We will only use analytics or advertising cookies if you agree.',
+  'cookie.accept': 'Accept all', 'cookie.reject': 'Reject optional', 'cookie.customize': 'Customize', 'cookie.save': 'Save choices', 'cookie.saved': 'Cookie choices saved',
+  'cookie.settingsIntro': 'Choose which cookies you allow. Strictly necessary cookies are always on because the site cannot work without them.',
+  'cookie.necessary': 'Strictly necessary', 'cookie.necessaryDesc': 'Login, language preference and these cookie choices.', 'cookie.alwaysOn': 'Always on',
+  'cookie.analytics': 'Analytics', 'cookie.analyticsDesc': 'Helps us understand how the site is used. We don’t use any analytics tools yet, so turning this on changes nothing for now.',
 };
 let lang = 'en';
 const t = k => (I18N[lang] && I18N[lang][k]) || EN[k] || k;
@@ -117,6 +131,86 @@ function languagePicker() {
     </div>
   </div>`;
 }
+
+/* ---------- cookie consent ----------
+   Strictly necessary storage (login cookie, language, this consent record) is always allowed.
+   Optional categories are off until the visitor opts in. To add e.g. analytics, either listen
+   for the `worklay:consent` event, or put the tag in index.html as
+     <script type="text/plain" data-consent="analytics" data-src="https://…"></script>
+   and it will only be activated after consent. List any new cookies in legal.js. */
+const CONSENT_KEY = 'worklay-consent';
+const CONSENT_VERSION = 1;               // bump when categories change to ask everyone again
+const CONSENT_MAX_AGE = 182 * 864e5;     // re-ask after ~6 months
+const OPTIONAL_CATEGORIES = ['analytics'];
+
+function readConsent() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CONSENT_KEY));
+    if (c && c.v === CONSENT_VERSION && Date.now() - new Date(c.date) < CONSENT_MAX_AGE) return c;
+  } catch (e) {}
+  return null;
+}
+function activateConsentedScripts(c) {
+  document.querySelectorAll('script[type="text/plain"][data-consent]').forEach(s => {
+    if (!c[s.dataset.consent]) return;
+    const n = document.createElement('script');
+    for (const a of s.attributes) {
+      if (a.name === 'type' || a.name === 'data-consent') continue;
+      n.setAttribute(a.name === 'data-src' ? 'src' : a.name, a.value);
+    }
+    n.text = s.text;
+    s.replaceWith(n);
+  });
+}
+function clearOptionalCookies() {
+  // worklay_auth is HttpOnly and invisible here, so this only removes cookies set by optional scripts.
+  const host = location.hostname, domains = ['', host, '.' + host, '.' + host.split('.').slice(-2).join('.')];
+  document.cookie.split(';').map(c => c.split('=')[0].trim()).filter(Boolean).forEach(name => {
+    domains.forEach(d => { document.cookie = `${name}=; Max-Age=0; Path=/${d ? '; Domain=' + d : ''}`; });
+  });
+}
+function saveConsent(choices) {
+  const prev = readConsent();
+  const c = { v: CONSENT_VERSION, date: new Date().toISOString(), necessary: true };
+  OPTIONAL_CATEGORIES.forEach(k => { c[k] = !!choices[k]; });
+  try { localStorage.setItem(CONSENT_KEY, JSON.stringify(c)); } catch (e) {}
+  renderCookieBanner();
+  closeModal();
+  // Scripts that already ran can't be unloaded, so withdrawing consent clears their cookies and reloads.
+  if (prev && OPTIONAL_CATEGORIES.some(k => prev[k] && !c[k])) { clearOptionalCookies(); location.reload(); return; }
+  activateConsentedScripts(c);
+  window.dispatchEvent(new CustomEvent('worklay:consent', { detail: { ...c } }));
+  toast(t('cookie.saved'));
+}
+function renderCookieBanner() {
+  let el = document.getElementById('cookie-banner');
+  if (readConsent()) { el && el.remove(); return; }
+  if (!el) { el = document.createElement('section'); el.id = 'cookie-banner'; el.className = 'cookie-banner'; document.body.appendChild(el); }
+  el.setAttribute('aria-label', t('cookie.title'));
+  el.innerHTML = `<div class="cookie-text"><h2>🍪 ${t('cookie.title')}</h2><p>${t('cookie.text')} <a href="#/cookies">${t('legal.cookies')}</a> · <a href="#/privacy">${t('legal.privacy')}</a></p></div>
+    <div class="cookie-actions">
+      <button class="btn btn-outline btn-sm" type="button" data-action="cookie-settings">${t('cookie.customize')}</button>
+      <button class="btn btn-primary btn-sm" type="button" data-action="cookie-reject">${t('cookie.reject')}</button>
+      <button class="btn btn-primary btn-sm" type="button" data-action="cookie-accept">${t('cookie.accept')}</button>
+    </div>`;
+}
+function openCookieSettings() {
+  const c = readConsent() || {};
+  modal(`<h2>${t('legal.cookieSettings')}</h2><p class="muted">${t('cookie.settingsIntro')}</p>
+    <form id="cookie-form">
+      <div class="cookie-cat"><div><b>${t('cookie.necessary')}</b> <span class="tag green">${t('cookie.alwaysOn')}</span><p class="small muted">${t('cookie.necessaryDesc')}</p></div>
+        <input class="switch" type="checkbox" checked disabled aria-label="${t('cookie.necessary')}"></div>
+      ${OPTIONAL_CATEGORIES.map(k => `<div class="cookie-cat"><label for="ck-${k}"><b>${t('cookie.' + k)}</b><p class="small muted">${t('cookie.' + k + 'Desc')}</p></label>
+        <input class="switch" type="checkbox" id="ck-${k}" name="${k}" ${c[k] ? 'checked' : ''}></div>`).join('')}
+      <p class="small"><a href="#/cookies" data-action="close-modal">${t('legal.cookies')}</a> · <a href="#/privacy" data-action="close-modal">${t('legal.privacy')}</a></p>
+      <div class="cookie-modal-actions">
+        <button class="btn btn-outline btn-sm" type="submit">${t('cookie.save')}</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="cookie-reject">${t('cookie.reject')}</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="cookie-accept">${t('cookie.accept')}</button>
+      </div>
+    </form>`);
+}
+window.worklayConsent = { get: readConsent, open: () => openCookieSettings() };
 
 /* ---------- utils ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -276,7 +370,7 @@ function openAuth(mode = 'login', intent = 'hire') {
         <p class="small muted" style="margin-top:-6px">Customers in your city and area will find you first.</p></div>
       <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>Password</label>${pwField('password', 'new-password', 'minlength="8" placeholder="At least 8 characters"')}</div>
-      <label class="filter-opt small"><input type="checkbox" name="terms" required> I agree to the Terms of Service and Privacy Policy</label>
+      <label class="filter-opt small"><input type="checkbox" name="terms" required> I agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a></label>
       ${err}<button class="btn btn-primary btn-block">Create account</button>
       <p class="small muted" style="text-align:center">Already have an account? <a href="#" data-action="auth-tab" data-mode="login">Log in</a></p></form>`}`, m => {
     const errEl = $('.auth-err', m);
@@ -729,7 +823,7 @@ V.dashboard = ([tab = 'overview']) => {
   if (tab === 'verification') { const v = u.verification; body = `<h1>Identity verification</h1><div class="card card-pad">
     ${v.status === 'verified' ? '<p class="verified" style="font-size:1.1rem">✓ Your identity is verified. The verified badge is shown on your profile.</p>' : v.status === 'pending' ? `<p><span class="tag">Under review</span></p><p class="muted">You submitted your ${esc(v.docType)} (${esc(v.fileName)}) ${ago(v.submitted)}. An administrator will review it soon.</p>` : `
     ${v.status === 'rejected' ? `<p class="tag orange">Previous submission was rejected${v.reason ? ': ' + esc(v.reason) : ''}</p>` : ''}
-    <p class="muted">Upload a clear photo of your passport, driving license or ID card. Our admins verify it manually; only admins can see your document.</p>
+    <p class="muted">Upload a clear photo of your passport, driving license or ID card. Our admins verify it manually; only admins can see your document, and it is deleted as soon as it has been reviewed. <a href="#/privacy">Privacy Policy</a></p>
     <form id="verify-form"><div class="field"><label>Document type</label><select name="docType"><option>Passport</option><option>Driving license</option><option>ID card</option></select></div>
     <div class="field"><label>Document (JPG, PNG, WEBP or PDF, max 5 MB)</label><input type="file" name="doc" accept="image/*,.pdf" required></div>
     <button class="btn btn-primary">Submit for verification</button></form>`}</div>`; }
@@ -818,7 +912,7 @@ V.contact = () => `<div class="page-head"><div class="container"><h1>Contact us<
   <div class="container detail"><form class="card card-pad" id="contact-form">
     <div class="row"><div class="field"><label>Name</label><input name="name" required value="${me() ? esc(me().name) : ''}"></div><div class="field"><label>Email</label><input name="email" type="email" required value="${me() ? esc(me().email) : ''}"></div></div>
     <div class="field"><label>Subject</label><select name="subject"><option>General question</option><option>Payments & payouts</option><option>Verification</option><option>Report a problem</option></select></div>
-    <div class="field"><label>Message</label><textarea name="message" required></textarea></div><button class="btn btn-primary">Send message</button></form>
+    <div class="field"><label>Message</label><textarea name="message" required></textarea></div><p class="small muted">We use your details only to reply to you. See our <a href="#/privacy">Privacy Policy</a>.</p><button class="btn btn-primary">Send message</button></form>
     <aside><div class="card card-pad"><h3>Get in touch</h3><p class="muted">📧 support@worklay.com</p><p class="muted">🕘 Mon–Fri, 9:00–18:00 (EET)</p><p class="muted">We usually reply within one business day.</p></div></aside></div>`;
 
 V.blog = () => `<div class="page-head"><div class="container"><h1>Worklay Blog</h1><p>Tips for buyers and freelancers.</p></div></div>
@@ -829,7 +923,7 @@ V.blogPost = ([id]) => { const p = db.posts.find(x => x.id === id); if (!p) retu
 V.notFound = () => `<div class="container">${empty('🧭', 'Page not found.', '<a class="btn btn-primary" href="#/">Go home</a>')}</div>`;
 
 /* ---------- router ---------- */
-const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
 function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
   const parts = path.split('/').filter(Boolean);
@@ -878,7 +972,11 @@ const A = {
     try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
     document.documentElement.lang = lang;
     render();
+    renderCookieBanner();
   },
+  'cookie-settings': () => openCookieSettings(),
+  'cookie-accept': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, true]))),
+  'cookie-reject': () => saveConsent({}),
   login: () => openLogin(),
   logout: () => act('auth/logout', {}, 'You have been logged out.', { after: () => { go('#/'); render(); } }),
   signup: el => openAuth('signup', el && el.dataset.intent),
@@ -967,6 +1065,7 @@ document.addEventListener('keydown', e => {
 document.addEventListener('submit', e => {
   const form = e.target, f = new FormData(form), id = form.id;
   const handlers = {
+    'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
     filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open') };
       Object.keys(q).forEach(k => !q[k] && delete q[k]); const { name } = parseHash(); go(`#/${name}?` + new URLSearchParams(q)); },
@@ -993,6 +1092,8 @@ document.addEventListener('submit', e => {
 /* ---------- boot ---------- */
 [lang] = detectLang();
 document.documentElement.lang = lang;
+renderCookieBanner();
+{ const c = readConsent(); if (c) { activateConsentedScripts(c); window.dispatchEvent(new CustomEvent('worklay:consent', { detail: { ...c } })); } }
 $('#burger').onclick = () => $('#mainnav').classList.toggle('open');
 $('#year').textContent = new Date().getFullYear();
 lastRoute = location.hash.split('?')[0];
