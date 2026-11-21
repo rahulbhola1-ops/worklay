@@ -1,0 +1,78 @@
+# Deploys worklay.com whenever master changes: SSH into the server, pull the latest code and
+# rebuild the Docker container. Setup (secrets, deploy key) is described in DEPLOY.md.
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: # allows "Run workflow" from the Actions tab
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # never interrupt a deploy halfway
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      SITE_URL: ${{ vars.SITE_URL || 'https://worklay.com' }}
+    steps:
+      - name: Check that deploy secrets are set
+        id: check
+        env:
+          HAS_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS != '' }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_PATH" ] \
+             || [ "$HAS_KEY" != "true" ] || [ "$HAS_KNOWN_HOSTS" != "true" ]; then
+            echo "::warning::Deploy secrets are not set yet, so nothing was deployed. See DEPLOY.md."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up SSH
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host keys: the job refuses to connect if the server's identity changes.
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Pull and rebuild on the server
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${DEPLOY_PORT:-22}" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$DEPLOY_PATH" "$GITHUB_SHA" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          git fetch --quiet origin master
+          git checkout --quiet master
+          git reset --quiet --hard "$2"   # exactly the commit that triggered this deploy
+          docker compose up -d --build --remove-orphans
+          docker image prune -f >/dev/null
+          echo "Deployed $(git log --oneline -1)"
+          REMOTE
+
+      - name: Check the live site
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS -o /dev/null "$SITE_URL/api?r=bootstrap"; then
+              echo "$SITE_URL is up."
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$SITE_URL did not respond after the deploy."
+          exit 1
