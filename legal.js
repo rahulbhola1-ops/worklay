@@ -50,8 +50,10 @@ export function privacyPage(lang) {
     <ul>
       <li><b>Kontoandmed:</b> nimi, e-post, parool (salvestame ainult räsi), linn ja piirkond ning kas palkad või töötad vabakutselisena. Kui registreerud Google’i kontoga, saame Google’ilt sinu nime, e-posti aadressi ja Google’i konto ID; sinu Google’i parooli me ei näe.</li>
       <li><b>Profiiliandmed:</b> profiilipilt, ametinimetus, tutvustus, oskused, põhikategooria ja tunnihind, kui need lisad. Profiilipildi saad igal ajal profiili seadetes eemaldada; siis kustutame faili.</li>
-      <li><b>Isikusamasuse kontroll:</b> dokumendi tüüp, failinimi ja üleslaaditud passi, juhiloa või ID-kaardi pilt.</li>
+      <li><b>Isikusamasuse kontroll:</b> üleslaaditud dokumentide tüüp, failinimi ja pilt või PDF: pass või ID-kaart ning teatud teenuste puhul juhiluba (sõidu- ja veoteenused) ja soovi korral karistusregistri väljavõte (lapsehoid, koristus). Kodukoristuse, lapsehoiu ja sõiduteenuste pakkujatelt nõuame kontrolli enne, kui neid saab broneerida.</li>
       <li><b>Sinu loodud sisu:</b> projektid, teenused, pakkumised, tellimused, arvustused, sõnumid, soovinimekiri ja jälgimised.</li>
+      <li><b>Vabakutselise teenuseprofiil:</b> kategooria, hinnad, nädalane töögraafik, piirkonnad ja sõiduraadius; need on avalikud.</li>
+      <li><b>Broneeringud:</b> kuupäev, kellaaeg, kestus, hind, aadress, kus töö tehakse, ja sinu märkused.</li>
       <li><b>Makse- ja väljamakseandmed:</b> tellimuste summad, maksete olek, saldo ja väljamaksed. Kaardimakseid töötleb Stripe: kaardiandmed sisestad Stripe’i lehel ja Worklay neid ei näe ega salvesta. Vabakutseliste isikusamasuse ja pangaandmed kogub väljamaksete seadistamisel Stripe.</li>
       <li><b>Kontaktivorm:</b> nimi, e-post, teema ja sõnum.</li>
       <li><b>Tehnilised andmed:</b> sisselogimisseansi küpsis ja keele-eelistus. Meie majutusteenuse pakkuja võib turvalisuse tagamiseks lühiajaliselt logida IP-aadresse.</li>
@@ -69,7 +71,7 @@ export function privacyPage(lang) {
     <h2>4. Kes sinu andmeid näeb</h2>
     <ul>
       <li><b>Kõik külastajad:</b> sinu avalik profiil (nimi, profiilipilt, ametinimetus, linn ja piirkond, tutvustus, oskused, hind, arvustused, kontrollitud märk) ning sinu postitatud projektid ja teenused. Sinu e-post ei ole avalik.</li>
-      <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi ja tellimusi näevad tehingu osapooled.</li>
+      <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi, tellimusi ja broneeringuid (sh aadressi ja märkusi) näevad ainult tehingu osapooled.</li>
       <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
       <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte. Mõlemad töötlevad andmeid ainult meie juhiste järgi.</li>
       <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
@@ -83,9 +85,9 @@ export function privacyPage(lang) {
 
     <h2>6. Kui kaua me andmeid hoiame</h2>
     <ul>
-      <li><b>Isikusamasuse dokumendi pilt:</b> kustutatakse kohe, kui administraator selle kinnitab või tagasi lükkab. Alles jääb ainult kontrolli tulemus.</li>
+      <li><b>Kontrollidokumentide failid:</b> kustutatakse kohe, kui administraator dokumendi kinnitab või tagasi lükkab. Alles jääb ainult kirje kontrolli kohta (dokumendi tüüp, tulemus ja kuupäevad).</li>
       <li><b>Konto, profiil ja sisu:</b> kuni sul on konto. Pärast konto sulgemist kustutame või anonüümime need 30 päeva jooksul, välja arvatud allpool nimetatu.</li>
-      <li><b>Tehingu- ja väljamakseandmed:</b> 7 aastat, nagu nõuab raamatupidamise seadus.</li>
+      <li><b>Tehingu-, broneeringu- ja väljamakseandmed:</b> 7 aastat, nagu nõuab raamatupidamise seadus.</li>
       <li><b>Kontaktivormi sõnumid:</b> kuni 12 kuud.</li>
       <li><b>Sisselogimisseanss:</b> aegub 30 päeva pärast või väljalogimisel.</li>
     </ul>
@@ -121,8 +123,10 @@ export function privacyPage(lang) {
     <ul>
       <li><b>Account data:</b> name, email, password (we only store a hash), city and area, and whether you hire or work as a freelancer. If you sign up with Google, we receive your name, email address and Google account ID from Google; we never see your Google password.</li>
       <li><b>Profile data:</b> profile photo, headline, bio, skills, main category and rate, if you add them. You can remove your photo at any time in your profile settings, and we then delete the file.</li>
-      <li><b>Identity verification:</b> document type, file name and the image of your passport, driving license or ID card that you upload.</li>
+      <li><b>Identity verification:</b> the type, file name and image or PDF of documents you upload: a passport or ID card, and for some services a driving licence (driving and transport) and optionally a criminal record extract (childcare, cleaning). Providers of home cleaning, childcare and driving must be verified before they can be booked.</li>
       <li><b>Content you create:</b> projects, services, proposals, orders, reviews, messages, wishlist items and follows.</li>
+      <li><b>Freelancer service profile:</b> category, prices, weekly working hours, areas and travel radius; these are public.</li>
+      <li><b>Bookings:</b> date, time, duration, price, the address where the work happens, and your notes.</li>
       <li><b>Payment and payout data:</b> order amounts, payment status, your balance and payouts. Card payments are processed by Stripe: you enter your card details on Stripe’s page, and Worklay never sees or stores them. When freelancers set up payouts, Stripe collects their identity and bank details.</li>
       <li><b>Contact form:</b> name, email, subject and message.</li>
       <li><b>Technical data:</b> a login session cookie and your language preference. Our hosting provider may briefly log IP addresses for security.</li>
@@ -140,7 +144,7 @@ export function privacyPage(lang) {
     <h2>4. Who can see your data</h2>
     <ul>
       <li><b>Everyone:</b> your public profile (name, profile photo, headline, city and area, bio, skills, rate, reviews, verified badge) and the projects and services you post. Your email is not public.</li>
-      <li><b>Other members:</b> messages are visible only to the recipient; proposals and orders are visible to the parties involved.</li>
+      <li><b>Other members:</b> messages are visible only to the recipient; proposals, orders and bookings (including the address and notes) are visible only to the parties involved.</li>
       <li><b>Worklay administrators:</b> see verification documents, payout requests and contact messages only to handle them.</li>
       <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos. Both process data only on our instructions.</li>
       <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
@@ -154,9 +158,9 @@ export function privacyPage(lang) {
 
     <h2>6. How long we keep your data</h2>
     <ul>
-      <li><b>Identity document image:</b> deleted as soon as an administrator approves or rejects it. Only the result of the check is kept.</li>
+      <li><b>Verification document files:</b> deleted as soon as an administrator approves or rejects the document. Only a record of the check is kept (document type, result and dates).</li>
       <li><b>Account, profile and content:</b> while you have an account. After you close it we delete or anonymise it within 30 days, except as listed below.</li>
-      <li><b>Transaction and payout records:</b> 7 years, as required by the Estonian Accounting Act.</li>
+      <li><b>Transaction, booking and payout records:</b> 7 years, as required by the Estonian Accounting Act.</li>
       <li><b>Contact form messages:</b> up to 12 months.</li>
       <li><b>Login session:</b> expires after 30 days or when you log out.</li>
     </ul>

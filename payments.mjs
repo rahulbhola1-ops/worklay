@@ -12,6 +12,10 @@
    Payment statuses: pending → (processing →) paid → released → transferring → transferred,
    or pending/processing → cancelled, or paid → refunded.
 
+   Kinds: 'order' (service package), 'project' (awarded project) and 'booking' (date/time booking:
+   paid when requested, refunded if the freelancer declines or it's cancelled, released when the
+   client marks it completed).
+
    Without STRIPE_SECRET_KEY the module is disabled and the site keeps its manual flow.
    The wl_payments table and the Stripe columns on wl_users are created by db/migrations. */
 import Stripe from 'stripe';
@@ -35,10 +39,10 @@ export function createPayments({ db, notify, publicOrigin }) {
   const net = p => round2(p.amount - p.fee);
 
   // ---- checkout ----
-  async function startCheckout(req, { kind, buyer, sellerId, amount, title, orderId = null, projectId = null, proposalId = null }) {
+  async function startCheckout(req, { kind, buyer, sellerId, amount, title, orderId = null, projectId = null, proposalId = null, bookingId = null }) {
     const fee = round2(amount * PLATFORM_FEE);
     const { id: pid } = await db.insertInto('wl_payments')
-      .values({ kind, order_id: orderId, project_id: projectId, proposal_id: proposalId, buyer_id: buyer.id, seller_id: sellerId, amount, fee })
+      .values({ kind, order_id: orderId, project_id: projectId, proposal_id: proposalId, booking_id: bookingId, buyer_id: buyer.id, seller_id: sellerId, amount, fee })
       .returning('id').executeTakeFirstOrThrow();
     const origin = publicOrigin(req);
     try {
@@ -77,6 +81,15 @@ export function createPayments({ db, notify, publicOrigin }) {
           await notify(p.seller_id, 'order', 'You have a new paid order.', '#/dashboard/selling', trx);
           return;
         }
+        if (p.kind === 'booking') {
+          // Paid: the booking now waits for the freelancer to confirm. If it was cancelled meanwhile
+          // (the checkout took too long and the slot was freed), give the money back.
+          const b = await trx.updateTable('wl_bookings').set({ status: 'PENDING', updated_at: sql`now()` })
+            .where('id', '=', p.booking_id).where('status', '=', 'AWAITING_PAYMENT').executeTakeFirst();
+          if (!changed(b)) { refundNeeded = true; return; }
+          await notify(p.seller_id, 'booking', 'You have a new paid booking request. Please confirm it.', '#/dashboard/bookings', trx);
+          return;
+        }
         // Lock the project so two payments can't both award it.
         const project = await trx.selectFrom('wl_projects').selectAll().where('id', '=', p.project_id).forUpdate().executeTakeFirst();
         if (!project || project.status !== 'open') { refundNeeded = true; return; }
@@ -86,7 +99,7 @@ export function createPayments({ db, notify, publicOrigin }) {
         await notify(p.seller_id, 'project', 'You were awarded a project. The customer has paid.', `#/project/${project.id}`, trx);
       });
       // The project was awarded through another payment in the meantime: give this one back.
-      if (refundNeeded) await refund(p.id, 'Project was already awarded').catch(e => console.error('Refund failed', p.id, e.message));
+      if (refundNeeded) await refund(p.id, p.kind === 'booking' ? 'The booking was no longer available' : 'Project was already awarded').catch(e => console.error('Refund failed', p.id, e.message));
     } else if (session.status === 'complete' && session.payment_status === 'unpaid') {
       // Delayed payment method (e.g. bank debit): wait for the async webhook.
       await db.updateTable('wl_payments').set({ status: 'processing', payment_intent_id: String(session.payment_intent || '') })
@@ -99,6 +112,7 @@ export function createPayments({ db, notify, publicOrigin }) {
     await db.transaction().execute(async trx => {
       const r = await trx.updateTable('wl_payments').set({ status: 'cancelled' }).where('id', '=', p.id).where('status', 'in', ['pending', 'processing']).executeTakeFirst();
       if (changed(r) && p.kind === 'order') await trx.updateTable('wl_orders').set({ status: 'cancelled' }).where('id', '=', p.order_id).where('status', '=', 'awaiting_payment').execute();
+      if (changed(r) && p.kind === 'booking') await trx.updateTable('wl_bookings').set({ status: 'CANCELLED', updated_at: sql`now()` }).where('id', '=', p.booking_id).where('status', '=', 'AWAITING_PAYMENT').execute();
     });
     if (p.checkout_session_id && p.status === 'pending') stripe.checkout.sessions.expire(p.checkout_session_id).catch(() => {});
   }
@@ -111,6 +125,14 @@ export function createPayments({ db, notify, publicOrigin }) {
     await notify(p.buyer_id, 'payment', `Your payment of €${p.amount} was refunded: ${reason}.`, '#/dashboard');
   }
 
+  // Give a held booking payment back (declined or cancelled). Returns false if nothing was paid.
+  async function refundBooking(bookingId, reason) {
+    const p = await paidPaymentFor({ bookingId });
+    if (!p) return false;
+    await refund(p.id, reason);
+    return true;
+  }
+
   // Abandoned checkouts: free them up so they don't sit in "awaiting payment" forever.
   async function cleanupAbandoned() {
     const stale = await db.selectFrom('wl_payments').selectAll().where('status', '=', 'pending')
@@ -120,9 +142,14 @@ export function createPayments({ db, notify, publicOrigin }) {
 
   // ---- releasing money to freelancers ----
   // Called when the customer approves the work. Returns false if there was no paid payment.
-  async function release({ orderId = null, projectId = null }) {
-    const p = await db.selectFrom('wl_payments').selectAll().where('status', '=', 'paid')
-      .where(orderId ? 'order_id' : 'project_id', '=', orderId ?? projectId).where('kind', '=', orderId ? 'order' : 'project').executeTakeFirst();
+  const refColumn = { order: 'order_id', project: 'project_id', booking: 'booking_id' };
+  const paidPaymentFor = ({ orderId = null, projectId = null, bookingId = null }) => {
+    const kind = orderId ? 'order' : bookingId ? 'booking' : 'project';
+    return db.selectFrom('wl_payments').selectAll().where('status', '=', 'paid').where('kind', '=', kind)
+      .where(refColumn[kind], '=', orderId ?? bookingId ?? projectId).executeTakeFirst();
+  };
+  async function release(ref) {
+    const p = await paidPaymentFor(ref);
     if (!p) return false;
     await db.transaction().execute(async trx => {
       const r = await trx.updateTable('wl_payments').set({ status: 'released', released_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'paid').executeTakeFirst();
@@ -249,7 +276,7 @@ export function createPayments({ db, notify, publicOrigin }) {
         const p = await applySession(await stripe.checkout.sessions.retrieve(req.query.session_id));
         if (!p) return res.redirect('/#/?payment=failed');
         const state = p.status === 'paid' ? 'success' : p.status === 'refunded' ? 'refunded' : 'processing';
-        res.redirect(p.kind === 'order' ? `/#/dashboard/orders?payment=${state}` : `/#/project/${p.project_id}?payment=${state}`);
+        res.redirect(p.kind === 'order' ? `/#/dashboard/orders?payment=${state}` : p.kind === 'booking' ? `/#/dashboard/bookings?payment=${state}` : `/#/project/${p.project_id}?payment=${state}`);
       } catch (e) {
         console.error(e);
         res.redirect('/#/?payment=failed');
@@ -262,6 +289,7 @@ export function createPayments({ db, notify, publicOrigin }) {
       const u = await me(req);
       if (stripe && p && u && p.buyer_id === u.id) await cancelPayment(p);
       if (p && p.kind === 'project') return res.redirect(`/#/project/${p.project_id}?payment=cancelled`);
+      if (p && p.kind === 'booking') return res.redirect('/#/dashboard/bookings?payment=cancelled');
       res.redirect('/#/dashboard/orders?payment=cancelled');
     });
 
@@ -287,13 +315,13 @@ export function createPayments({ db, notify, publicOrigin }) {
     let q = db.selectFrom('wl_payments').selectAll().orderBy('id', 'desc');
     q = admin ? q.limit(200) : q.where(eb => eb.or([eb('buyer_id', '=', userId), eb('seller_id', '=', userId)])).where('status', '<>', 'cancelled');
     return (await q.execute()).map(p => ({
-      id: String(p.id), kind: p.kind, orderId: p.order_id ? String(p.order_id) : null, projectId: p.project_id ? String(p.project_id) : null,
+      id: String(p.id), kind: p.kind, orderId: p.order_id ? String(p.order_id) : null, projectId: p.project_id ? String(p.project_id) : null, bookingId: p.booking_id ? String(p.booking_id) : null,
       buyerId: String(p.buyer_id), sellerId: String(p.seller_id), amount: p.amount, fee: p.fee, net: net(p), status: p.status, created: iso(p.created_at),
     }));
   }
 
   return {
-    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, cleanupAbandoned,
+    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, refundBooking, cleanupAbandoned,
     onboardingLink, refreshAccount, dashboardLink, registerRoutes, summary, listFor,
   };
 }

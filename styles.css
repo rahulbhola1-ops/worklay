@@ -468,3 +468,67 @@ img.avatar{display:block;padding:0}
 form:has(select[name="category"] option[value="tutoring"]:checked) .tutor-only{display:block}
 #settings-form:not(:has(input[name="isFreelancer"]:checked)) .fl-settings{display:none}
 .detail-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+
+/* ---------- Onboarding ---------- */
+.onboarding{max-width:860px;padding-top:32px}
+.ob-head h1{margin-bottom:14px}
+.stepper{display:flex;gap:8px;list-style:none;padding:0;margin:0 0 18px;flex-wrap:wrap}
+.stepper button{display:flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:7px 14px 7px 8px;font:inherit;font-size:.9rem;font-weight:500;color:var(--ink-2);cursor:pointer}
+.stepper span{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:var(--bg);font-size:.8rem;font-weight:700}
+.stepper .active button{border-color:var(--brand);color:var(--brand);background:var(--brand-soft)}
+.stepper .active span{background:var(--brand);color:#fff}
+.stepper .done span{background:var(--green);color:#fff}
+#ob-form h2{font-size:1.3rem;margin-bottom:14px}
+.ob-nav{display:flex;justify-content:space-between;margin:16px 0 40px}
+.cat-pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:18px}
+.cat-opt{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:14px;cursor:pointer;margin:0;font-weight:400;transition:.15s}
+.cat-opt input{position:absolute;opacity:0;pointer-events:none}
+.cat-opt .ico{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;font-size:1.3rem;flex-shrink:0}
+.cat-opt small{display:block;color:var(--muted);font-size:.78rem}
+.cat-opt:has(input:checked){border-color:var(--brand);background:var(--brand-soft)}
+.cat-opt:has(input:focus-visible){outline:3px solid rgba(56,88,255,.35);outline-offset:2px}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.preset-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.week{display:flex;flex-direction:column;gap:6px}
+.day-row{display:flex;align-items:center;gap:14px;padding:8px 12px;border:1.5px solid var(--line);border-radius:12px;flex-wrap:wrap}
+.day-row.on{border-color:#c9d0f5;background:#fafbff}
+.day-toggle{display:flex;align-items:center;gap:8px;width:72px;margin:0;font-weight:600;cursor:pointer}
+.windows{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex:1}
+.window{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px 4px 3px 6px}
+.window select{width:auto;padding:6px 8px;border:0;background:transparent}
+.icon-x{border:0;background:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:0 6px;border-radius:6px}
+.icon-x:hover{color:var(--red);background:#fff0f0}
+.service-summary{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:20px}
+
+/* ---------- Verification documents ---------- */
+.doc-row{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 0;border-bottom:1px solid var(--line)}
+.doc-form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.doc-form input[type=file]{width:auto;max-width:240px;padding:8px;font-size:.85rem}
+
+/* ---------- Booking card ---------- */
+.book-card{margin-bottom:16px;border:2px solid var(--brand-soft)}
+.price-line{margin-bottom:12px;color:var(--ink)}
+.notice{background:#fff8e6;border:1px solid #ffe2a8;border-radius:12px;padding:10px 12px;font-size:.9rem;color:#7a5600;margin:8px 0 0}
+.day-pills{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:6px;scrollbar-width:thin}
+.day-pill{display:flex;flex-direction:column;align-items:center;min-width:52px;padding:6px 4px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font:inherit;cursor:pointer;line-height:1.15}
+.day-pill small{font-size:.68rem;color:var(--muted)}
+.day-pill b{font-size:1.05rem}
+.day-pill.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.day-pill:disabled{opacity:.4;cursor:not-allowed}
+.slot-pills{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 14px;min-height:34px;align-items:center}
+.slot-pill{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font:inherit;font-size:.88rem;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
+.slot-pill:hover{border-color:var(--brand)}
+.slot-pill.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.price-break{background:var(--bg);border-radius:12px;padding:4px 12px;margin-bottom:12px;font-size:.9rem}
+.price-break .list-item{padding:6px 0}
+.price-break .total{border-top:1px solid var(--line)}
+
+/* ---------- Bookings dashboard ---------- */
+.booking-row{display:flex;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.booking-row .when{display:flex;flex-direction:column;align-items:center;justify-content:center;width:52px;height:56px;border-radius:12px;background:var(--brand-soft);color:var(--brand);line-height:1.1;flex-shrink:0}
+.booking-row .when b{font-size:1.3rem}
+.booking-row .when small{font-size:.75rem;text-transform:uppercase}
+.booking-row .seller-line,.booking-row a .avatar{vertical-align:middle}
+.booking-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.booking-btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:760px){.row3{grid-template-columns:1fr}.booking-side{align-items:flex-start;width:100%}.booking-btns{justify-content:flex-start}}

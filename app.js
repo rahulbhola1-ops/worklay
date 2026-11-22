@@ -13,7 +13,7 @@ let PLATFORM_FEE = 0.10;
 let MIN_PAYOUT = 20;
 const LANG_KEY = 'worklay-lang';
 
-const CATEGORIES = [
+let CATEGORIES = [ // replaced by the server's list (wl_categories) on load
   { id: 'dev', name: 'Development & IT', ico: '💻', color: '#eef1ff' },
   { id: 'design', name: 'Design & Creative', ico: '🎨', color: '#fff0e7' },
   { id: 'writing', name: 'Writing & Translation', ico: '✍️', color: '#e3f8ee' },
@@ -26,55 +26,52 @@ const CATEGORIES = [
 ];
 const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
 
-/* ---------- freelancer details: speciality, availability, areas covered, tutoring ---------- */
-const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
-const TIMES = [['morning', 'Morning', '8–12'], ['afternoon', 'Afternoon', '12–17'], ['evening', 'Evening', '17–21']];
+/* ---------- freelancer profile helpers: pricing, weekly hours, tutoring, documents ---------- */
+const WEEKDAYS = [['MON', 'Mon'], ['TUE', 'Tue'], ['WED', 'Wed'], ['THU', 'Thu'], ['FRI', 'Fri'], ['SAT', 'Sat'], ['SUN', 'Sun']];
+const TIMES = [['morning', 'Morning', '8–12', 480, 720], ['afternoon', 'Afternoon', '12–17', 720, 1020], ['evening', 'Evening', '17–21', 1020, 1260]];
 const TUTOR_SUBJECTS = ['Mathematics', 'Estonian', 'English', 'Russian', 'German', 'Physics', 'Chemistry', 'Biology', 'Geography', 'History', 'Computer science', 'Music', 'Art', 'Exam preparation'];
 const TUTOR_LEVELS = ['Grades 1–4', 'Grades 5–9', 'Grades 10–12', 'University', 'Adults'];
+const PRICING = { HOURLY: ['Hourly', 'per hour'], FIXED_PACKAGE: ['Package / session', 'per session'], PER_EVENT: ['Per event', 'per event'] };
+const SERVICE_TYPES = { REMOTE: '🌐 Remote', ON_SITE: '📍 On-site', HYBRID: '🔀 Online or on-site' };
+const DOC_INFO = {
+  GOVERNMENT_ID: ['Government ID', 'Passport or ID card. A clear photo of the side with your photo.'],
+  DRIVERS_LICENSE: ['Driver’s licence', 'Both sides of a valid driving licence.'],
+  BACKGROUND_CHECK: ['Background check', 'Optional: a criminal record extract (e.g. from eesti.ee), as a PDF or photo.'],
+};
+let SLOT_MINUTES = [30, 45, 60, 90, 120, 180, 240, 300, 360, 480];
 const splitList = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 const chk = (name, value, label, on, extra = '') => `<label class="chk"><input type="checkbox" name="${name}" value="${esc(value)}" ${on ? 'checked' : ''}>${label}${extra}</label>`;
 const areaChecks = (city, chosen = []) => (CITIES[city] || []).map(a => chk('areas', a, esc(a), chosen.includes(a))).join('') || '<span class="small muted">Choose your city first.</span>';
-// "Weekdays · evenings", "Every day · mornings, afternoons", …
-function availText(av) {
-  if (!av || !av.days.length || !av.times.length) return '';
-  const d = av.days, has = x => d.includes(x);
-  const days = d.length === 7 ? 'Every day' : d.length === 5 && ['mon', 'tue', 'wed', 'thu', 'fri'].every(has) ? 'Weekdays'
-    : d.length === 2 && has('sat') && has('sun') ? 'Weekends' : DAYS.filter(([k]) => has(k)).map(([, l]) => l).join(', ');
-  return `${days} · ${av.times.length === 3 ? 'any time' : TIMES.filter(([k]) => av.times.includes(k)).map(([, l]) => l.toLowerCase() + 's').join(', ')}`;
+const minutesOf = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const durationText = m => m % 60 ? (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`) : `${m / 60} h`;
+// "€25 per hour", "€300 per 4-hour shoot"
+const priceText = u => (u.priceAmount > 0 ? `${money(u.priceAmount)} ${esc(u.priceUnitLabel || PRICING[u.pricingType]?.[1] || '')}` : '');
+// "Mon–Fri 09:00–17:00 · Sat 10:00–14:00"
+function weeklyText(w) {
+  const days = WEEKDAYS.filter(([d]) => (w?.[d] || []).length);
+  if (!days.length) return '';
+  const groups = [];
+  for (const [d, label] of days) {
+    const key = w[d].map(x => `${x.start}–${x.end}`).join(', '), last = groups[groups.length - 1];
+    const idx = WEEKDAYS.findIndex(([k]) => k === d);
+    if (last && last.key === key && last.endIdx === idx - 1) { last.endIdx = idx; last.endLabel = label; }
+    else groups.push({ key, startLabel: label, endLabel: label, endIdx: idx, startIdx: idx });
+  }
+  return groups.map(g => `${g.startLabel}${g.endIdx > g.startIdx ? (g.endIdx - g.startIdx > 1 ? '–' : ', ') + g.endLabel : ''} ${g.key}`).join(' · ');
 }
-// Form fields shared by sign-up and Profile settings. `u` holds the current values.
-function freelancerFields(u, city) {
-  const subjects = u.tutorSubjects || [], levels = u.tutorLevels || [], av = u.availability || { days: [], times: [] };
-  return `<div class="field"><label>Your speciality</label><input name="specialty" maxlength="80" value="${esc(u.specialty || '')}" placeholder="e.g. Bathroom plumbing, Maths exam preparation, Logo design"></div>
-    <div class="tutor-only">
-      <div class="field"><label>Subjects you teach</label><div class="chks">${TUTOR_SUBJECTS.map(x => chk('subjects', x, esc(x), subjects.includes(x))).join('')}</div>
-        <input name="subjectsOther" style="margin-top:8px" maxlength="200" value="${esc(subjects.filter(x => !TUTOR_SUBJECTS.includes(x)).join(', '))}" placeholder="Other subjects, comma separated"></div>
-      <div class="field"><label>Classes / levels</label><div class="chks">${TUTOR_LEVELS.map(x => chk('levels', x, esc(x), levels.includes(x))).join('')}</div>
-        <input name="levelsOther" style="margin-top:8px" maxlength="120" value="${esc(levels.filter(x => !TUTOR_LEVELS.includes(x)).join(', '))}" placeholder="Other classes or levels, comma separated"></div>
-    </div>
-    <div class="field"><label>When are you available?</label><div class="chks">${DAYS.map(([k, l]) => chk('days', k, l, av.days.includes(k))).join('')}</div>
-      <div class="chks" style="margin-top:8px">${TIMES.map(([k, l, h]) => chk('times', k, l, av.times.includes(k), ` <small>${h}</small>`)).join('')}</div></div>
-    <div class="field"><label>Areas you cover</label><div class="chks" data-role="cover-areas">${areaChecks(city, u.serviceAreas || [])}</div>
-      <p class="small muted" style="margin:6px 0 0">Customers searching any of these areas will find you.</p></div>`;
+// Does the freelancer work during this part of the day on any day?
+const worksDuring = (u, key) => { const t = TIMES.find(([k]) => k === key); return !!t && Object.values(u.weeklyAvailability || {}).some(ws => ws.some(w => minutesOf(w.start) < t[4] && minutesOf(w.end) > t[3])); };
+// Today and the time in Estonia (bookings use local Estonian time)
+function localNow() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Tallinn', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
+  return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour) * 60 + Number(p.minute) };
 }
-// Reads the fields above from a form.
-function readFreelancerFields(f) {
-  return {
-    specialty: (f.get('specialty') || '').trim(),
-    tutorSubjects: [...f.getAll('subjects'), ...splitList(f.get('subjectsOther'))],
-    tutorLevels: [...f.getAll('levels'), ...splitList(f.get('levelsOther'))],
-    days: f.getAll('days'), times: f.getAll('times'),
-    serviceAreas: [...new Set([...f.getAll('areas'), f.get('area')].filter(Boolean))], // own area always counts
-  };
-}
-function freelancerDetailsMissing(d, category) {
-  if (!d.specialty) return 'Please tell customers your speciality.';
-  if (!d.days.length) return 'Please choose the days you are available.';
-  if (!d.times.length) return 'Please choose the times of day you are available.';
-  if (category === 'tutoring' && !d.tutorSubjects.length) return 'Please choose at least one subject you teach.';
-  if (category === 'tutoring' && !d.tutorLevels.length) return 'Please choose at least one class or level you teach.';
-  return '';
-}
+const addDays = (date, n) => { const d = new Date(date + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const weekdayKey = date => WEEKDAYS[(new Date(date + 'T00:00:00Z').getUTCDay() + 6) % 7][0];
+const fmtDate = (date, opts = { weekday: 'short', day: 'numeric', month: 'short' }) => new Date(date + 'T12:00:00Z').toLocaleDateString(numberLocale(), { ...opts, timeZone: 'UTC' });
+const bookingStarted = b => { const n = localNow(); return b.date < n.date || (b.date === n.date && minutesOf(b.start) <= n.minutes); };
+
 const FEATURE_NAMES = ['Source File', 'Social Media Kit', 'High Resolution', 'Project Upload'];
 let PAYOUT_METHODS = ['PayPal', 'Payoneer', 'Bank transfer'];
 let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
@@ -298,7 +295,9 @@ async function api(route, data) {
 }
 async function refresh() {
   db = await api('bootstrap');
-  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
+  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments;
+    if (db.config.categories) CATEGORIES = db.config.categories.map(c => ({ ...c, ico: c.icon }));
+    if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -364,7 +363,7 @@ function statPills(id) {
   const s = userStats(id);
   return `<div class="stat-pills"><span class="pill blue"><b>${s.inQueue}</b>In Queue Service</span><span class="pill teal"><b>${s.doneProjects}</b>Complete Project</span><span class="pill amber"><b>${s.doneServices}</b>Complete Service</span></div>`;
 }
-const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>', awaiting_payment: '<span class="tag orange">Awaiting payment</span>', processing: '<span class="tag">Payment processing</span>', released: '<span class="tag orange">Waiting for payout setup</span>', transferring: '<span class="tag">Sending…</span>', transferred: '<span class="tag green">Sent to Stripe</span>', refunded: '<span class="tag gray">Refunded</span>', cancelled: '<span class="tag gray">Cancelled</span>' }[st] || esc(st));
+const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>', awaiting_payment: '<span class="tag orange">Awaiting payment</span>', processing: '<span class="tag">Payment processing</span>', released: '<span class="tag orange">Waiting for payout setup</span>', transferring: '<span class="tag">Sending…</span>', transferred: '<span class="tag green">Sent to Stripe</span>', refunded: '<span class="tag gray">Refunded</span>', cancelled: '<span class="tag gray">Cancelled</span>', AWAITING_PAYMENT: '<span class="tag orange">Awaiting payment</span>', PENDING: '<span class="tag">Waiting for confirmation</span>', CONFIRMED: '<span class="tag green">Confirmed</span>', COMPLETED: '<span class="tag gray">Completed</span>', CANCELLED: '<span class="tag gray">Cancelled</span>', APPROVED: '<span class="tag green">Approved</span>', REJECTED: '<span class="tag orange">Rejected</span>' }[st] || esc(st));
 
 function serviceCard(s) {
   const u = user(s.sellerId), r = serviceRating(s.id);
@@ -461,8 +460,8 @@ function openAuth(mode = 'login', intent = 'hire') {
       <div class="field"><label>Full name</label><input name="name" required maxlength="60" autocomplete="name"></div>
       ${locationFields('', '', { required: true })}
       <div class="fl-only"><div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.ico} ${c.name}</option>`).join('')}</select></div>
-        <div class="field"><label>What do you do?</label><input name="title" maxlength="60" placeholder="e.g. Plumber, Maths tutor"></div></div>
-        ${freelancerFields({}, '')}</div>
+        <div class="field"><label>What do you do?</label><input name="title" maxlength="60" placeholder="e.g. Photographer, Babysitter"></div></div>
+        <p class="small muted" style="margin-top:-6px">Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.</p></div>
       <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>Password</label>${pwField('password', 'new-password', 'minlength="8" placeholder="At least 8 characters"')}</div>
       <label class="filter-opt small"><input type="checkbox" name="terms" required> I agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a></label>
@@ -478,12 +477,9 @@ function openAuth(mode = 'login', intent = 'hire') {
     if (sf) sf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(sf), work = f.get('intent') === 'work';
       const title = (f.get('title') || '').trim() || catById(f.get('category')).name + ' freelancer';
-      const details = work ? readFreelancerFields(f) : {};
-      const missing = work ? freelancerDetailsMissing(details, f.get('category')) : '';
-      if (missing) { errEl.textContent = missing; errEl.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
-      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms'), ...details }, null, { errEl, after: () => {
-        closeModal(); go(work ? '#/dashboard/settings' : '#/post-project'); render();
-        toast(work ? 'Account created! Tell customers about your skills.' : 'Account created! Post your first project.'); } });
+      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
+        closeModal(); OB = null; go(work ? '#/onboarding' : '#/post-project'); render();
+        toast(work ? 'Account created! Now set up your service profile.' : 'Account created! Post your first project.'); } });
     };
   });
 }
@@ -577,7 +573,7 @@ const V = {};
 /* Earnings tab when payments go through Stripe Connect. */
 function stripeEarnings(u) {
   const s = u.payouts || {}, mine = (db.payments || []).filter(p => p.sellerId === u.id);
-  const label = p => p.kind === 'order' ? (service((db.orders.find(o => o.id === p.orderId) || {}).serviceId) || {}).title || 'Service order' : (project(p.projectId) || {}).title || 'Project';
+  const label = p => p.kind === 'booking' ? `Booking ${fmtDate((db.bookings.find(b => b.id === p.bookingId) || {}).date || localNow().date)}` : p.kind === 'order' ? (service((db.orders.find(o => o.id === p.orderId) || {}).serviceId) || {}).title || 'Service order' : (project(p.projectId) || {}).title || 'Project';
   const setup = !s.connected
     ? `<div><b>Set up payouts</b><div class="small muted">Connect your bank account through Stripe to receive your earnings. Stripe will ask for your ID and bank details; it only takes a few minutes.</div></div><button class="btn btn-primary" data-action="stripe-connect">Set up payouts</button>`
     : !s.ready
@@ -699,8 +695,9 @@ function filterSidebar(kind, q) {
     ${kind === 'freelancers' ? `<h4>📚 Tutoring</h4>
       <select name="subject"><option value="">Any subject</option>${[...new Set([...TUTOR_SUBJECTS, ...db.users.flatMap(x => x.tutorSubjects || [])])].map(x => `<option ${q.subject === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <select name="level" style="margin-top:8px"><option value="">Any class / level</option>${[...new Set([...TUTOR_LEVELS, ...db.users.flatMap(x => x.tutorLevels || [])])].map(x => `<option ${q.level === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      <h4>🕒 Available</h4><select name="time"><option value="">Any time</option>${TIMES.map(([k, l, h]) => `<option value="${k}" ${q.time === k ? 'selected' : ''}>${l} (${h})</option>`).join('')}</select>` : ''}
-    <h4>${kind === 'projects' ? 'Budget' : kind === 'freelancers' ? 'Hourly rate' : 'Starting price'} (€)</h4><div class="row"><input name="min" type="number" placeholder="Min" value="${esc(q.min || '')}"><input name="max" type="number" placeholder="Max" value="${esc(q.max || '')}"></div>
+      <h4>🕒 Available</h4><select name="time"><option value="">Any time</option>${TIMES.map(([k, l, h]) => `<option value="${k}" ${q.time === k ? 'selected' : ''}>${l} (${h})</option>`).join('')}</select>
+      <label class="filter-opt"><input type="checkbox" name="urgent" value="1" ${q.urgent ? 'checked' : ''}> ⚡ Takes same-day bookings</label>` : ''}
+    <h4>${kind === 'projects' ? 'Budget' : kind === 'freelancers' ? 'Price' : 'Starting price'} (€)</h4><div class="row"><input name="min" type="number" placeholder="Min" value="${esc(q.min || '')}"><input name="max" type="number" placeholder="Max" value="${esc(q.max || '')}"></div>
     ${kind !== 'projects' ? `<h4>Seller</h4><label class="filter-opt"><input type="checkbox" name="verified" value="1" ${q.verified ? 'checked' : ''}> Verified only</label>` : `<h4>Status</h4><label class="filter-opt"><input type="checkbox" name="open" value="1" ${q.open ? 'checked' : ''}> Open for proposals</label>`}
     <button class="btn btn-primary btn-block" style="margin-top:14px">Apply filters</button>
     <a class="btn btn-ghost btn-block btn-sm" href="#/${kind}">Clear</a></form></aside>`;
@@ -717,6 +714,7 @@ function activeFilters(kind, q) {
   if (q.subject) chips.push(['subject', '', '📚 ' + q.subject]);
   if (q.level) chips.push(['level', '', '🎓 ' + q.level]);
   if (q.time) chips.push(['time', '', '🕒 ' + (TIMES.find(([k]) => k === q.time) || ['', q.time])[1]]);
+  if (q.urgent) chips.push(['urgent', '', '⚡ Same-day']);
   if (q.remote) chips.push(['remote', '', '🌐 Incl. remote']);
   if (!chips.length) return '';
   return `<div class="active-filters">${chips.map(([k, v, l]) => `<button class="af-chip" data-action="clear-filter" data-key="${k}" data-val="${esc(v)}" aria-label="Remove filter ${esc(l)}">${esc(l)} <span>×</span></button>`).join('')}<button class="af-clear" data-action="nav" data-href="#/${kind}">Clear all</button></div>`;
@@ -739,10 +737,10 @@ function freelancerCard(u) {
     <div class="top">${avatar(u, 'md')}<div style="min-width:0"><a class="name" href="#/user/${u.id}">${esc(u.name)}</a> ${u.verification.status === 'verified' ? '<span class="verified" title="Verified">✓</span>' : ''}<div class="small muted truncate">${esc(u.title)}</div></div></div>
     ${u.specialty ? `<div class="small"><b>${esc(u.specialty)}</b></div>` : ''}
     <div class="proj-meta"><span>📍 <b>${esc(locStr(u) || 'Location not set')}</b>${u.serviceAreas.filter(a => a !== u.area).length ? ` <span class="muted">+${u.serviceAreas.filter(a => a !== u.area).length} areas</span>` : ''}</span>${proxTag(u)}</div>
-    ${availText(u.availability) ? `<div class="small muted">🕒 ${esc(availText(u.availability))}</div>` : ''}
+    ${weeklyText(u.weeklyAvailability) ? `<div class="small muted">🕒 ${esc(weeklyText(u.weeklyAvailability))}${u.availableForUrgent ? ' · ⚡ same-day' : ''}</div>` : ''}
     <div class="small">${stars(st.rating, st.reviews)} · ${st.doneProjects + st.doneServices} jobs done</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">${(u.tutorSubjects.length ? u.tutorSubjects : u.skills).slice(0, 3).map(s => `<span class="tag gray">${esc(s)}</span>`).join('')}</div>
-    <div class="list-item" style="padding:10px 0 0;border:0"><span>${u.rate ? `<b class="price">${money(u.rate)}</b>/hr` : ''}${u.rate && from ? ' · ' : ''}${from ? `from <b>${money(from)}</b>` : ''}</span>
+    <div class="list-item" style="padding:10px 0 0;border:0"><span>${priceText(u) ? `<b class="price">${priceText(u)}</b>` : from ? `from <b>${money(from)}</b>` : ''}</span>
       <span style="display:flex;gap:6px"><a class="btn btn-outline btn-sm" href="#/messages/${u.id}">💬</a><a class="btn btn-primary btn-sm" href="#/user/${u.id}">View profile</a></span></div>
   </div>`;
 }
@@ -750,8 +748,8 @@ function freelancerCard(u) {
 V.freelancers = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean);
   const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category))
-    && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' ')) && (!q.min || u.rate >= +q.min) && (!q.max || u.rate <= +q.max) && (!q.verified || u.verification.status === 'verified')
-    && (!q.subject || u.tutorSubjects.includes(q.subject)) && (!q.level || u.tutorLevels.includes(q.level)) && (!q.time || u.availability.times.includes(q.time)))
+    && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' '), (catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(x => x.name).join(' ')) && (!q.min || u.priceAmount >= +q.min) && (!q.max || u.priceAmount <= +q.max) && (!q.verified || u.verification.status === 'verified')
+    && (!q.subject || u.tutorSubjects.includes(q.subject)) && (!q.level || u.tutorLevels.includes(q.level)) && (!q.time || worksDuring(u, q.time)) && (!q.urgent || u.availableForUrgent))
     .sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating);
   return `<div class="page-head"><div class="container"><h1>Find freelancers${locHeading(q)}</h1><p>Hire trusted local professionals by city and area — or work with anyone remotely.</p></div></div>
   <div class="container layout">${filterSidebar('freelancers', q)}<div>
@@ -868,8 +866,8 @@ V.user = ([id]) => {
   const followers = db.follows.filter(f => f.followee === u.id).length;
   return `<div class="container" style="padding-top:36px">
     <div class="profile-card">${avatar(u, 'lg')}
-      <div style="flex:1;min-width:240px"><h1 style="margin:0">${esc(u.name)}</h1>${badges(u)}
-        <div><b>${esc(u.title)}</b></div><div class="muted small">📍 ${esc(locStr(u) || u.country || 'Location not set')} ${proxTag(u)} · ${u.isFreelancer && u.rate ? `<b>${money(u.rate)}/hr</b> · ` : ''}Member since ${monthYear(u.joined)} · ${followers} follower${followers === 1 ? '' : 's'}</div>
+      <div style="flex:1;min-width:240px"><h1 style="margin:0">${esc(u.name)}</h1>${badges(u)}${u.isFreelancer && u.verification.status === 'pending' ? '<span class="tag orange" style="margin-left:6px">⏳ Verification pending</span>' : ''}
+        <div><b>${esc(u.title)}</b>${u.isFreelancer && u.category ? ` · <span class="muted">${catById(u.category).ico} ${esc((catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(x => x.name).join(', ') || catById(u.category).name)}</span>` : ''}</div><div class="muted small">📍 ${esc(locStr(u) || u.country || 'Location not set')} ${proxTag(u)} · ${u.isFreelancer && priceText(u) ? `<b>${priceText(u)}</b> · ` : ''}Member since ${monthYear(u.joined)} · ${followers} follower${followers === 1 ? '' : 's'}</div>
         ${statPills(u.id)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${own ? '<a class="btn btn-outline" href="#/dashboard/settings">Edit profile</a>' : `<button class="btn ${isFollowing(u.id) ? 'on' : 'btn-primary'}" data-action="follow" data-id="${u.id}">${isFollowing(u.id) ? '✓ ' + t('common.following') : '+ ' + t('common.follow')}</button><a class="btn btn-outline" href="#/messages/${u.id}">💬 ${t('common.message')}</a>`}</div>
     </div>
@@ -878,12 +876,13 @@ V.user = ([id]) => {
       ${svcs.length ? `<h2 style="margin-top:20px">Services</h2><div class="grid">${svcs.map(serviceCard).join('')}</div>` : ''}
       <h2 style="margin-top:30px">Reviews ${st.reviews ? `<span class="stars">★ ${st.rating.toFixed(1)}</span>` : ''}</h2>
       ${rv.length ? rv.map(x => { const f = user(x.from); return `<div class="review">${avatar(f, 'sm')}<div><b>${esc(f.name)}</b> <span class="stars">${'★'.repeat(x.rating)}</span> <span class="muted small">${ago(x.date)}</span><p style="margin:4px 0 0">${esc(x.text)}</p></div></div>`; }).join('') : '<p class="muted">No reviews yet.</p>'}
-    </div><aside><div class="card card-pad">
+    </div><aside>${u.isFreelancer && u.onboarded && !own ? bookCard(u) : ''}<div class="card card-pad">
       ${u.isFreelancer ? `${u.specialty ? `<h3>Speciality</h3><p style="margin:0 0 20px">${esc(u.specialty)}</p>` : ''}
         ${u.tutorSubjects.length ? `<h3>📚 Teaches</h3><div class="detail-list">${u.tutorSubjects.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
           ${u.tutorLevels.length ? `<div class="detail-list" style="margin-bottom:20px">${u.tutorLevels.map(x => `<span class="tag gray">🎓 ${esc(x)}</span>`).join('')}</div>` : '<div style="margin-bottom:20px"></div>'}` : ''}
-        ${availText(u.availability) ? `<h3>🕒 Available</h3><p style="margin:0 0 20px">${esc(availText(u.availability))}</p>` : ''}
-        ${u.serviceAreas.length ? `<h3>📍 Areas covered</h3><div class="detail-list" style="margin-bottom:20px">${u.serviceAreas.map(a => `<span class="tag gray">${esc(a)}</span>`).join('')}</div>` : ''}` : ''}
+        ${weeklyText(u.weeklyAvailability) ? `<h3>🕒 Available</h3><p style="margin:0 0 20px">${esc(weeklyText(u.weeklyAvailability))}${u.availableForUrgent ? '<br><span class="small muted">⚡ Takes same-day bookings</span>' : ''}</p>` : ''}
+        ${u.servicePerks.length ? `<h3>✨ Included</h3><div class="detail-list" style="margin-bottom:20px">${u.servicePerks.map(x => `<span class="tag green">${esc(x)}</span>`).join('')}</div>` : ''}
+        ${u.serviceAreas.length || (catById(u.category).serviceType !== 'REMOTE' && u.city) ? `<h3>📍 Areas covered</h3><div class="detail-list">${u.serviceAreas.map(a => `<span class="tag gray">${esc(a)}</span>`).join('')}</div><p class="small muted" style="margin:6px 0 20px">Travels up to ${u.travelRadiusKm} km${u.city ? ' around ' + esc(u.city) : ''}</p>` : ''}` : ''}
       <h3>Skills</h3><div style="display:flex;gap:6px;flex-wrap:wrap">${u.skills.length ? u.skills.map(s => `<span class="tag">${esc(s)}</span>`).join('') : '<span class="muted">—</span>'}</div>
       <h3 style="margin-top:20px">Verification</h3><p class="${u.verification.status === 'verified' ? 'verified' : 'muted'}">${u.verification.status === 'verified' ? '✓ Identity verified by Worklay' : u.verification.status === 'pending' ? 'Verification under review' : 'Not verified yet'}</p>
     </div></aside></div></div>`;
@@ -922,7 +921,7 @@ V.postService = () => {
     <button class="btn btn-primary" style="margin-top:18px">Publish service</button></form></div>`;
 };
 
-const DASH_TABS = [['overview', '🏠', 'Overview'], ['projects', '📋', 'My projects'], ['orders', '🛒', 'My orders'], ['selling', '💼', 'Selling'], ['proposals', '📨', 'My proposals'], ['earnings', '💶', 'Earnings & payouts'], ['verification', '🛡️', 'Verification'], ['settings', '⚙️', 'Profile settings']];
+const DASH_TABS = [['overview', '🏠', 'Overview'], ['bookings', '📅', 'Bookings'], ['projects', '📋', 'My projects'], ['orders', '🛒', 'My orders'], ['selling', '💼', 'Selling'], ['proposals', '📨', 'My proposals'], ['earnings', '💶', 'Earnings & payouts'], ['verification', '🛡️', 'Verification'], ['settings', '⚙️', 'Profile settings']];
 V.dashboard = ([tab = 'overview']) => {
   const u = me(); if (!u) return `<div class="container">${empty('🔐', 'Sign in to see your dashboard.', `<button class="btn btn-primary" data-action="login">${t('cta.login')}</button> <button class="btn btn-outline" data-action="signup">${t('cta.signup')}</button>`)}</div>`;
   const st = userStats(u.id);
@@ -943,7 +942,7 @@ V.dashboard = ([tab = 'overview']) => {
   const steps = u.isFreelancer ? [
     [u.bio && u.bio.length >= 20, 'Write a short bio', '#/dashboard/settings'],
     [u.skills.length > 0, 'Add your skills', '#/dashboard/settings'],
-    [u.rate > 0, 'Set your hourly rate', '#/dashboard/settings'],
+    [u.onboarded, 'Finish your service profile (prices and hours)', '#/onboarding'],
     [db.services.some(s => s.sellerId === u.id), 'Offer your first service', '#/post-service'],
     [u.verification.status === 'verified' || u.verification.status === 'pending', 'Verify your identity', '#/dashboard/verification'],
   ] : [
@@ -974,27 +973,22 @@ V.dashboard = ([tab = 'overview']) => {
     <div class="kpis"><div class="kpi"><div class="muted small">Available</div><div class="v">${money(u.balance)}</div></div><div class="kpi"><div class="muted small">Pending payouts</div><div class="v">${money(pays.filter(p => p.status === 'pending').reduce((a, p) => a + p.amount, 0))}</div></div><div class="kpi"><div class="muted small">Withdrawn</div><div class="v">${money(pays.filter(p => p.status === 'paid').reduce((a, p) => a + p.amount, 0))}</div></div><div class="kpi"><div class="muted small">Platform fee</div><div class="v">${PLATFORM_FEE * 100}%</div></div></div>
     <div class="card card-pad" style="margin-bottom:20px"><div class="list-item"><div><b>Withdraw your earnings</b><div class="small muted">Payouts via ${PAYOUT_METHODS.join(', ')}. Earnings become available once a buyer confirms the job objectives were met.</div></div><button class="btn btn-primary" data-action="payout" ${u.balance < MIN_PAYOUT ? 'disabled' : ''}>Request payout</button></div></div>
     <div class="card card-pad"><h3>Payout history</h3>${pays.length ? pays.map(p => `<div class="list-item"><div><b>${money(p.amount)}</b> via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div>${statusTag(p.status)}</div>`).join('') : '<p class="muted">No payouts yet.</p>'}</div>`; }
-  if (tab === 'verification') { const v = u.verification; body = `<h1>Identity verification</h1><div class="card card-pad">
-    ${v.status === 'verified' ? '<p class="verified" style="font-size:1.1rem">✓ Your identity is verified. The verified badge is shown on your profile.</p>' : v.status === 'pending' ? `<p><span class="tag">Under review</span></p><p class="muted">You submitted your ${esc(v.docType)} (${esc(v.fileName)}) ${ago(v.submitted)}. An administrator will review it soon.</p>` : `
-    ${v.status === 'rejected' ? `<p class="tag orange">Previous submission was rejected${v.reason ? ': ' + esc(v.reason) : ''}</p>` : ''}
-    <p class="muted">Upload a clear photo of your passport, driving license or ID card. Our admins verify it manually; only admins can see your document, and it is deleted as soon as it has been reviewed. <a href="#/privacy">Privacy Policy</a></p>
-    <form id="verify-form"><div class="field"><label>Document type</label><select name="docType"><option>Passport</option><option>Driving license</option><option>ID card</option></select></div>
-    <div class="field"><label>Document (JPG, PNG, WEBP or PDF, max 5 MB)</label><input type="file" name="doc" accept="image/*,.pdf" required></div>
-    <button class="btn btn-primary">Submit for verification</button></form>`}</div>`; }
+  if (tab === 'verification') body = `<h1>Identity verification</h1>${verificationPanel(u)}`;
+  if (tab === 'bookings') body = bookingsTab(u);
   if (tab === 'settings') body = `<h1>Profile settings</h1>
     ${PHOTO_UPLOADS ? `<div class="card card-pad photo-card">${avatar(u, 'lg')}<div>
       <h3 style="margin:0 0 4px">Profile photo</h3><p class="small muted" style="margin:0 0 12px">A clear photo of your face helps customers trust you. JPG, PNG or WebP, up to ${MAX_PHOTO_MB} MB.</p>
       <label class="btn btn-primary btn-sm">${u.avatarUrl ? 'Change photo' : 'Upload photo'}<input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" hidden></label>
       ${u.avatarUrl ? '<button class="btn btn-ghost btn-sm" type="button" data-action="photo-remove">Remove</button>' : ''}</div></div>` : ''}
+    ${u.isFreelancer ? `<div class="card card-pad service-summary"><div><h3 style="margin:0 0 4px">${catById(u.category).ico} Service profile</h3>
+      <div class="small muted">${u.onboarded ? `${esc(catById(u.category).name)} · ${priceText(u) || 'no price yet'} · ${esc(weeklyText(u.weeklyAvailability) || 'no hours set')}` : 'Not finished yet: customers can’t book you until it is.'}</div></div>
+      <a class="btn ${u.onboarded ? 'btn-outline' : 'btn-primary'} btn-sm" href="#/onboarding">${u.onboarded ? 'Edit category, prices & hours' : 'Finish setup'}</a></div>` : ''}
     <form class="card card-pad" id="settings-form">
     <div class="row"><div class="field"><label>Name</label><input name="name" value="${esc(u.name)}" required></div><div class="field"><label>Email</label><input name="email" type="email" value="${esc(u.email)}" required></div></div>
     <div class="field"><label>Headline</label><input name="title" value="${esc(u.title)}"></div>
     <h3 style="margin-top:8px">📍 Your location</h3><p class="small muted" style="margin-top:-4px">Customers search by city and area, so freelancers nearby are shown first.</p>
     ${locationFields(u.city || '', u.area || '', { required: true })}
     <label class="filter-opt" style="margin-bottom:12px"><input type="checkbox" name="isFreelancer" ${u.isFreelancer ? 'checked' : ''}> I offer services as a freelancer (show me in “Find freelancers”)</label>
-    <div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}" ${u.category === c.id ? 'selected' : ''}>${c.ico} ${c.name}</option>`).join('')}</select></div>
-      <div class="field"><label>Hourly rate (€)</label><input name="rate" type="number" min="0" step="1" value="${u.rate || ''}"></div></div>
-    <div class="fl-settings">${freelancerFields(u, u.city || '')}</div>
     <div class="field"><label>Bio</label><textarea name="bio">${esc(u.bio)}</textarea></div>
     <div class="field"><label>Skills (comma separated)</label><input name="skills" value="${esc(u.skills.join(', '))}"></div>
     <button class="btn btn-primary">Save changes</button></form>`;
@@ -1045,17 +1039,16 @@ V.wishlist = () => {
     ${projs.length ? `<h2 style="margin-top:30px">Projects</h2><div class="grid">${projs.map(projectCard).join('')}</div>` : ''}</div>`;
 };
 
-V.admin = () => {
+V.admin = ([sub] = []) => {
   const u = me(); if (!u || u.role !== 'admin') return `<div class="container">${empty('⛔', 'Admins only. Log in with an administrator account.', '<button class="btn btn-primary" data-action="login">Log in</button>')}</div>`;
-  const pending = db.users.filter(x => x.verification.status === 'pending'), pays = db.payouts.filter(p => p.status === 'pending');
+  if (sub === 'verifications') return adminVerifications();
+  const pending = db.pendingDocuments || [], pays = db.payouts.filter(p => p.status === 'pending');
   const gmv = (db.adminStats || {}).gmv || 0;
   return `<div class="container" style="padding-top:36px"><h1>Admin panel</h1>
     <div class="kpis"><div class="kpi"><div class="muted small">Users</div><div class="v">${db.users.length}</div></div><div class="kpi"><div class="muted small">Services</div><div class="v">${db.services.length}</div></div><div class="kpi"><div class="muted small">Projects</div><div class="v">${db.projects.length}</div></div><div class="kpi"><div class="muted small">Gross volume</div><div class="v">${money(gmv)}</div></div></div>
-    <div class="card card-pad" style="margin-bottom:20px"><h3>Identity verification queue (${pending.length})</h3>
-      ${pending.length ? pending.map(x => `<div class="list-item"><div style="display:flex;gap:12px;align-items:center">${avatar(x)}<div><b>${esc(x.name)}</b> <span class="muted small">${esc(x.email)}</span><div class="small muted">${esc(x.verification.docType)} · ${esc(x.verification.fileName)} · ${ago(x.verification.submitted)}</div></div></div>
-      <div style="display:flex;gap:8px">${x.verification.hasDoc ? `<button class="btn btn-ghost btn-sm" data-action="view-doc" data-id="${x.id}">View document</button>` : '<span class="small muted">(file missing)</span>'}<button class="btn btn-outline btn-sm" data-action="verify" data-id="${x.id}" data-ok="0">Reject</button><button class="btn btn-primary btn-sm" data-action="verify" data-id="${x.id}" data-ok="1">Approve</button></div></div>`).join('') : '<p class="muted">No pending verifications.</p>'}</div>
+    <div class="card card-pad" style="margin-bottom:20px"><div class="list-item" style="padding:0;border:0"><div><h3 style="margin:0">Verification queue</h3><div class="small muted">${pending.length} document${pending.length === 1 ? '' : 's'} from ${new Set(pending.map(d => d.userId)).size} freelancer${new Set(pending.map(d => d.userId)).size === 1 ? '' : 's'} waiting for review</div></div><a class="btn btn-primary btn-sm" href="#/admin/verifications">Open queue</a></div></div>
     ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Refunds and disputes are handled in the <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
-      ${(db.payments || []).length ? db.payments.slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div></div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.amount)}</b>${statusTag(p.status)}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
+      ${(db.payments || []).length ? db.payments.slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : p.kind === 'booking' ? 'Booking' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div></div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.amount)}</b>${statusTag(p.status)}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
     <div class="card card-pad" style="margin-bottom:20px"><h3>Payout requests (${pays.length})</h3>
       ${pays.length ? pays.map(p => `<div class="list-item"><div><b>${esc(user(p.userId).name)}</b> — ${money(p.amount)} via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div><button class="btn btn-primary btn-sm" data-action="mark-paid" data-id="${p.id}">Mark as paid</button></div>`).join('') : '<p class="muted">No pending payouts.</p>'}</div>
     <div class="card card-pad"><h3>Contact form messages (${db.contacts.length})</h3>${db.contacts.length ? db.contacts.map(c => `<div class="list-item"><div><b>${esc(c.name)}</b> <span class="muted small">${esc(c.email)} · ${ago(c.date)}</span><p style="margin:4px 0 0">${esc(c.message)}</p></div></div>`).join('') : '<p class="muted">No messages.</p>'}</div></div>`;
@@ -1084,8 +1077,189 @@ V.blogPost = ([id]) => { const p = db.posts.find(x => x.id === id); if (!p) retu
 
 V.notFound = () => `<div class="container">${empty('🧭', 'Page not found.', '<a class="btn btn-primary" href="#/">Go home</a>')}</div>`;
 
+/* ---------- freelancer onboarding: #/onboarding?step=1..4 ---------- */
+let OB = null; // the profile being edited, kept between steps
+function obInit(u) {
+  if (OB && OB.userId === u.id) return;
+  OB = { userId: u.id, category: u.category || '', subcategories: [...u.subcategories], title: u.title || '', specialty: u.specialty || '',
+    city: u.city || '', area: u.area || '', serviceAreas: [...u.serviceAreas], travelRadiusKm: u.travelRadiusKm || 15,
+    tutorSubjects: [...u.tutorSubjects], tutorLevels: [...u.tutorLevels], pricingType: u.pricingType || 'HOURLY', priceAmount: u.priceAmount || '',
+    priceUnitLabel: u.priceUnitLabel || '', servicePerks: [...u.servicePerks], weeklyAvailability: JSON.parse(JSON.stringify(u.weeklyAvailability || {})),
+    slotDurationMinutes: u.slotDurationMinutes || 60, availableForUrgent: !!u.availableForUrgent };
+}
+const obCat = () => CATEGORIES.find(c => c.id === OB.category) || null;
+const obSteps = () => [['1', 'Service'], ['2', 'Pricing'], ['3', 'Availability'], ...(obCat()?.requiresVerification ? [['4', 'Verification']] : [])];
+// Copy the visible step's inputs into OB.
+function obRead() {
+  const form = $('#ob-form'); if (!form || !OB || form.tagName !== 'FORM') return; // step 4 has no fields of its own
+  const f = new FormData(form), step = form.dataset.step;
+  if (step === '1') {
+    OB.category = f.get('category') || OB.category; OB.subcategories = f.getAll('subcategories'); OB.title = (f.get('title') || '').trim(); OB.specialty = (f.get('specialty') || '').trim();
+    if (form.querySelector('[name="city"]')) { OB.city = f.get('city') || ''; OB.area = f.get('area') || ''; OB.travelRadiusKm = +f.get('travelRadiusKm') || 15; OB.serviceAreas = [...new Set([...f.getAll('areas'), OB.area].filter(Boolean))]; }
+    if (form.querySelector('[name="subjectsOther"]')) { OB.tutorSubjects = [...f.getAll('subjects'), ...splitList(f.get('subjectsOther'))]; OB.tutorLevels = [...f.getAll('levels'), ...splitList(f.get('levelsOther'))]; }
+  }
+  if (step === '2') { OB.pricingType = f.get('pricingType') || 'HOURLY'; OB.priceAmount = f.get('priceAmount'); OB.priceUnitLabel = (f.get('priceUnitLabel') || '').trim(); OB.servicePerks = [...f.getAll('perks'), ...splitList(f.get('perksOther'))]; }
+  if (step === '3') {
+    const w = {};
+    for (const [d] of WEEKDAYS) {
+      if (!f.get('on_' + d)) continue;
+      const starts = f.getAll(d + '_start'), ends = f.getAll(d + '_end');
+      w[d] = starts.map((st, i) => ({ start: st, end: ends[i] })).filter(x => x.start && x.end);
+      if (!w[d].length) w[d] = [{ start: '09:00', end: '17:00' }];
+    }
+    OB.weeklyAvailability = w; OB.slotDurationMinutes = +f.get('slotDurationMinutes') || 60; OB.availableForUrgent = !!f.get('availableForUrgent');
+  }
+}
+// Save a draft and move between steps.
+function obGo(dir) {
+  obRead();
+  const steps = obSteps().map(x => +x[0]), cur = +($('#ob-form')?.dataset.step || 1), next = steps[steps.indexOf(cur) + dir];
+  if (dir > 0 && cur === 1 && !OB.category) return toast('Please choose a category.', 'error');
+  act('onboarding/save', { ...OB }, null, { after: () => { go('#/onboarding?step=' + (next || cur)); render(); window.scrollTo(0, 0); } });
+}
+const timeOptions = sel => { let o = ''; for (let m = 5 * 60; m <= 23 * 60 + 30; m += 30) o += `<option ${hhmm(m) === sel ? 'selected' : ''}>${hhmm(m)}</option>`; return o; };
+V.onboarding = (_, q) => {
+  const u = me(); if (!u) return `<div class="container">${empty('🔐', 'Sign in to set up your service profile.', '<button class="btn btn-primary" data-action="login">Log in</button>')}</div>`;
+  obInit(u);
+  const steps = obSteps(), step = steps.some(([n]) => n === q.step) ? q.step : '1', last = steps[steps.length - 1][0] === step, cat = obCat();
+  if (q.welcome === 'google') setTimeout(() => toast('Account created with Google! Now set up your service profile.', 'success'), 50);
+  let body = '';
+  if (step === '1') body = `<h2>What do you offer?</h2>
+    <div class="cat-pick">${CATEGORIES.map(c => `<label class="cat-opt"><input type="radio" name="category" value="${c.id}" data-rerender ${OB.category === c.id ? 'checked' : ''}><span class="ico" style="background:${c.color}">${c.ico}</span><span><b>${esc(c.name)}</b><small>${SERVICE_TYPES[c.serviceType] || ''}${c.requiresVerification ? ' · 🛡️ ID check' : ''}</small></span></label>`).join('')}</div>
+    ${cat && cat.subcategories.length ? `<div class="field"><label>Which services exactly?</label><div class="chks">${cat.subcategories.map(x => chk('subcategories', x.id, esc(x.name), OB.subcategories.includes(x.id))).join('')}</div></div>` : ''}
+    <div class="row"><div class="field"><label>Headline</label><input name="title" maxlength="60" value="${esc(OB.title)}" placeholder="e.g. Wedding photographer"></div>
+      <div class="field"><label>Your speciality</label><input name="specialty" maxlength="80" value="${esc(OB.specialty)}" placeholder="e.g. Natural-light portraits, Evening babysitting"></div></div>
+    ${cat && cat.id === 'tutoring' ? `<div class="field"><label>Subjects you teach</label><div class="chks">${TUTOR_SUBJECTS.map(x => chk('subjects', x, esc(x), OB.tutorSubjects.includes(x))).join('')}</div>
+        <input name="subjectsOther" style="margin-top:8px" value="${esc(OB.tutorSubjects.filter(x => !TUTOR_SUBJECTS.includes(x)).join(', '))}" placeholder="Other subjects, comma separated"></div>
+      <div class="field"><label>Classes / levels</label><div class="chks">${TUTOR_LEVELS.map(x => chk('levels', x, esc(x), OB.tutorLevels.includes(x))).join('')}</div>
+        <input name="levelsOther" style="margin-top:8px" value="${esc(OB.tutorLevels.filter(x => !TUTOR_LEVELS.includes(x)).join(', '))}" placeholder="Other classes or levels, comma separated"></div>` : ''}
+    ${cat && cat.serviceType !== 'REMOTE' ? `<h3 style="margin-top:8px">📍 Where do you work?</h3>${locationFields(OB.city, OB.area, { required: true })}
+      <div class="field"><label>How far will you travel?</label><select name="travelRadiusKm">${[5, 10, 15, 25, 50, 100].map(k => `<option value="${k}" ${OB.travelRadiusKm === k ? 'selected' : ''}>Up to ${k} km</option>`).join('')}</select></div>
+      <div class="field"><label>Areas you cover</label><div class="chks" data-role="cover-areas">${areaChecks(OB.city, OB.serviceAreas)}</div><p class="small muted" style="margin:6px 0 0">Customers searching these areas will find you.</p></div>` : ''}`;
+  if (step === '2') body = `<h2>How do you charge?</h2>
+    <div class="row3">${Object.entries(PRICING).map(([k, [label, unit]]) => `<label class="choice"><input type="radio" name="pricingType" value="${k}" data-rerender ${OB.pricingType === k ? 'checked' : ''}> ${label}<small class="muted" style="display:block">${unit}</small></label>`).join('')}</div>
+    <div class="row" style="margin-top:14px"><div class="field"><label>Price (€)</label><input name="priceAmount" type="number" min="1" step="0.5" value="${esc(OB.priceAmount)}" placeholder="${OB.pricingType === 'HOURLY' ? '25' : '150'}"></div>
+      <div class="field"><label>Shown as</label><input name="priceUnitLabel" maxlength="40" value="${esc(OB.priceUnitLabel)}" placeholder="${PRICING[OB.pricingType][1]}${OB.pricingType === 'PER_EVENT' ? ', e.g. per 2-hour shoot' : ''}"></div></div>
+    <p class="small muted" style="margin-top:-6px">${OB.pricingType === 'HOURLY' ? 'Clients book in multiples of your slot length and pay for the hours they book.' : 'Clients book one slot and pay this fixed price.'} Worklay keeps ${Math.round(PLATFORM_FEE * 100)}%.</p>
+    ${cat ? `<div class="field"><label>What’s included?</label><div class="chks">${[...new Set([...(cat.perks || []), ...OB.servicePerks])].map(x => chk('perks', x, esc(x), OB.servicePerks.includes(x))).join('')}</div>
+      <input name="perksOther" style="margin-top:8px" placeholder="Something else? Comma separated"></div>` : ''}`;
+  if (step === '3') body = `<h2>When can clients book you?</h2>
+    <div class="preset-row"><span class="small muted">Quick fill:</span>${[['weekdays', 'Weekdays 9–17'], ['evenings', 'Weekday evenings'], ['weekends', 'Weekends 10–16'], ['clear', 'Clear all']].map(([k, l]) => `<button type="button" class="btn btn-ghost btn-sm" data-action="ob-preset" data-preset="${k}">${l}</button>`).join('')}</div>
+    <div class="week">${WEEKDAYS.map(([d, l]) => { const ws = OB.weeklyAvailability[d] || []; return `<div class="day-row ${ws.length ? 'on' : ''}">
+      <label class="day-toggle"><input type="checkbox" name="on_${d}" value="1" data-rerender ${ws.length ? 'checked' : ''}><span>${l}</span></label>
+      <div class="windows">${ws.length ? ws.map((w, i) => `<span class="window"><select name="${d}_start">${timeOptions(w.start)}</select>–<select name="${d}_end">${timeOptions(w.end)}</select><button type="button" class="icon-x" data-action="ob-remove-window" data-day="${d}" data-i="${i}" aria-label="Remove">×</button></span>`).join('') + `<button type="button" class="btn btn-ghost btn-sm" data-action="ob-add-window" data-day="${d}">+ hours</button>` : '<span class="muted small">Not available</span>'}</div></div>`; }).join('')}</div>
+    <div class="row" style="margin-top:16px"><div class="field"><label>Booking slot length</label><select name="slotDurationMinutes">${SLOT_MINUTES.map(m => `<option value="${m}" ${OB.slotDurationMinutes === m ? 'selected' : ''}>${durationText(m)}</option>`).join('')}</select>
+      <p class="small muted" style="margin:6px 0 0">${OB.pricingType === 'HOURLY' ? 'Clients can book one or more slots in a row.' : 'Each booking takes one slot, e.g. a 4-hour shoot.'}</p></div>
+      <div class="field"><label>&nbsp;</label><label class="filter-opt"><input type="checkbox" name="availableForUrgent" value="1" ${OB.availableForUrgent ? 'checked' : ''}> ⚡ Available for same-day urgent bookings</label></div></div>`;
+  if (step === '4') body = `<h2>Verify your identity</h2><p class="muted">Clients trust ${esc(cat.name.toLowerCase())} providers with their homes, families or journeys, so Worklay checks your documents before anyone can book you. You can finish setting up now; bookings open as soon as we’ve approved them.</p>${verificationPanel(u, cat)}`;
+  return `<div class="container onboarding"><div class="ob-head"><h1>Set up your service profile</h1>
+    <ol class="stepper">${steps.map(([n, l], i) => `<li class="${n === step ? 'active' : steps.findIndex(x => x[0] === step) > i ? 'done' : ''}"><button type="button" data-action="ob-step" data-step="${n}"><span>${i + 1}</span>${l}</button></li>`).join('')}</ol></div>
+    ${step === '4' /* holds its own upload forms, and forms can't be nested */ ? `<div class="card card-pad" id="ob-form" data-step="4">${body}</div>` : `<form class="card card-pad" id="ob-form" data-step="${step}" onsubmit="return false">${body}</form>`}
+    <div class="ob-nav">${step !== '1' ? '<button class="btn btn-outline" data-action="ob-back">← Back</button>' : '<span></span>'}
+      ${last ? '<button class="btn btn-primary" data-action="ob-finish">Finish and publish</button>' : '<button class="btn btn-primary" data-action="ob-next">Save and continue →</button>'}</div></div>`;
+};
+
+/* ---------- verification documents (dashboard tab and onboarding step 4) ---------- */
+function verificationPanel(u, cat = catById(u.category)) {
+  const required = cat && cat.requiredDocuments && cat.requiredDocuments.length ? cat.requiredDocuments : ['GOVERNMENT_ID'];
+  const optional = cat && ['childcare', 'cleaning'].includes(cat.id) ? ['BACKGROUND_CHECK'] : [];
+  const latest = {}; for (const d of db.myDocuments || []) if (!latest[d.type]) latest[d.type] = d;
+  const st = u.verification.status;
+  const head = st === 'verified' ? '<p class="verified" style="font-size:1.05rem">✓ You are verified. The badge is shown on your profile.</p>'
+    : st === 'pending' ? '<p><span class="tag">⏳ Under review</span> We usually check documents within one business day.</p>'
+    : st === 'rejected' ? `<p class="tag orange">A document was not approved${u.verification.reason ? ': ' + esc(u.verification.reason) : ''}. Please upload it again.</p>` : '';
+  const row = (type, isOptional) => { const d = latest[type], [label, hint] = DOC_INFO[type];
+    return `<div class="doc-row"><div><b>${label}</b>${isOptional ? ' <span class="small muted">(optional)</span>' : ''}<div class="small muted">${hint}</div>
+      ${d ? `<div class="small" style="margin-top:4px">${{ PENDING: '<span class="tag">⏳ Pending review</span>', APPROVED: '<span class="tag green">✓ Approved</span>', REJECTED: '<span class="tag orange">Not approved</span>' }[d.status]} <span class="muted">uploaded ${ago(d.uploaded)}${d.status === 'REJECTED' && d.reason ? ' · ' + esc(d.reason) : ''}</span></div>` : ''}</div>
+      ${!d || d.status === 'REJECTED' ? `<form class="doc-form" id="doc-form-${type}"><input type="hidden" name="documentType" value="${type}"><input type="file" name="doc" accept="image/jpeg,image/png,image/webp,application/pdf" required><button class="btn btn-primary btn-sm">Upload</button></form>` : ''}</div>`; };
+  return `<div class="card card-pad">${head}${required.map(t => row(t, false)).join('')}${optional.map(t => row(t, true)).join('')}
+    <p class="small muted" style="margin-bottom:0">JPG, PNG, WebP or PDF, up to 5 MB. Only Worklay admins can see your documents, and each file is deleted as soon as it has been reviewed. <a href="#/privacy">Privacy Policy</a></p></div>`;
+}
+
+/* ---------- booking card on the public profile ---------- */
+let BK = { fid: null };
+function bookCard(u) {
+  const cat = catById(u.category), today = localNow().date;
+  if (BK.fid !== u.id) BK = { fid: u.id, date: '', duration: 0, start: '', slots: [], options: [], price: 0, reason: '' };
+  if (!BK.date) { for (let i = 1; i <= 21 && !BK.date; i++) if ((u.weeklyAvailability[weekdayKey(addDays(today, i))] || []).length) BK.date = addDays(today, i); BK.date = BK.date || addDays(today, 1); }
+  const blocked = cat.requiresVerification && u.verification.status !== 'verified';
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, u.availableForUrgent ? i : i + 1));
+  return `<div class="card card-pad book-card" id="book-card" data-id="${u.id}">
+    <h3 style="margin:0 0 2px">📅 Book ${esc(u.name.split(' ')[0])}</h3><div class="price-line">${priceText(u) ? `<b>${priceText(u)}</b>` : '<span class="muted">Price on request</span>'}</div>
+    ${blocked ? `<p class="notice">🛡️ Bookings open once Worklay has verified ${esc(u.name.split(' ')[0])}’s documents${u.verification.status === 'pending' ? ' (under review)' : ''}. You can still send a message.</p>` : `
+    <div class="day-pills">${days.map(d => { const off = !(u.weeklyAvailability[weekdayKey(d)] || []).length; return `<button type="button" class="day-pill ${d === BK.date ? 'on' : ''}" data-action="bk-day" data-date="${d}" ${off ? 'disabled' : ''}><small>${fmtDate(d, { weekday: 'short' })}</small><b>${fmtDate(d, { day: 'numeric' })}</b><small>${fmtDate(d, { month: 'short' })}</small></button>`; }).join('')}</div>
+    <div class="row"><div class="field"><label>Date</label><input type="date" id="bk-date" value="${BK.date}" min="${u.availableForUrgent ? today : addDays(today, 1)}" max="${addDays(today, 90)}"></div>
+      <div class="field" id="bk-duration-field"></div></div>
+    <label class="small" style="font-weight:600">Free times</label><div class="slot-pills" id="bk-slots"><span class="small muted">Loading…</span></div>
+    ${cat.serviceType !== 'REMOTE' ? '<div class="field"><label>Address</label><input id="bk-address" maxlength="200" placeholder="Street, house, city" autocomplete="street-address"></div>' : ''}
+    <div class="field"><label>Notes <span class="muted small">(optional)</span></label><textarea id="bk-notes" maxlength="1000" rows="2" placeholder="Anything they should know?"></textarea></div>
+    <div id="bk-summary"></div><p class="auth-err" id="bk-err" role="alert" style="color:#d92d50;margin:0 0 8px;font-size:.9rem"></p>
+    <button class="btn btn-primary btn-block" data-action="bk-request" id="bk-request" disabled>Request booking</button>
+    <p class="small muted" style="margin:8px 0 0;text-align:center">${CARD_PAYMENTS ? '🔒 You pay by card now. Worklay holds the money and releases it after the job; you’re refunded if it isn’t confirmed.' : 'The freelancer confirms your request.'}</p>`}
+  </div>`;
+}
+async function loadSlots() {
+  if (!$('#book-card') || !BK.fid || !$('#bk-slots')) return;
+  document.querySelectorAll('.day-pill').forEach(b => b.classList.toggle('on', b.dataset.date === BK.date));
+  if ($('#bk-date')) $('#bk-date').value = BK.date;
+  $('#bk-slots').innerHTML = '<span class="small muted">Loading…</span>';
+  try {
+    const r = await api(`slots&freelancer=${encodeURIComponent(BK.fid)}&date=${encodeURIComponent(BK.date)}&duration=${BK.duration || ''}`);
+    Object.assign(BK, { slots: r.slots, options: r.durationOptions, duration: r.duration, price: r.price, reason: r.reason });
+  } catch (err) { Object.assign(BK, { slots: [], reason: 'error' }); }
+  drawBooking();
+}
+function drawBooking() {
+  const reasons = { 'day-off': 'Not working on this day. Try another date.', 'fully-booked': 'Fully booked on this day. Try another date.', 'no-same-day': 'Doesn’t take same-day bookings.', past: 'This date has passed.', 'too-far': 'Bookings open up to 90 days ahead.', error: 'Couldn’t load free times. Please try again.' };
+  if ($('#bk-duration-field')) $('#bk-duration-field').innerHTML = BK.options.length > 1 ? `<label>Duration</label><select id="bk-duration">${BK.options.map(m => `<option value="${m}" ${m === BK.duration ? 'selected' : ''}>${durationText(m)}</option>`).join('')}</select>` : BK.options.length ? `<label>Duration</label><div class="muted" style="padding:12px 0">${durationText(BK.options[0])}</div>` : '';
+  $('#bk-slots').innerHTML = BK.slots.length ? BK.slots.map(s => `<button type="button" class="slot-pill ${s.start === BK.start ? 'on' : ''}" data-action="bk-slot" data-start="${s.start}">${s.start}</button>`).join('') : `<span class="small muted">${reasons[BK.reason] || 'No free times.'}</span>`;
+  const u = user(BK.fid), hourly = u.pricingType === 'HOURLY', slot = BK.slots.find(s => s.start === BK.start);
+  $('#bk-summary').innerHTML = slot ? `<div class="price-break"><div class="list-item"><span>${fmtDate(BK.date, { weekday: 'long', day: 'numeric', month: 'long' })}, ${slot.start}–${slot.end}</span></div>
+    <div class="list-item"><span>${hourly ? `${money(u.priceAmount)} × ${durationText(BK.duration)}` : esc(u.priceUnitLabel || PRICING[u.pricingType][1])}</span><span>${money(BK.price)}</span></div>
+    <div class="list-item total"><b>Total</b><b>${money(BK.price)}</b></div></div>` : '';
+  $('#bk-request').disabled = !slot;
+  $('#bk-request').textContent = slot ? `Request booking · ${money(BK.price)}` : 'Pick a time';
+}
+
+/* ---------- bookings dashboard tab ---------- */
+function bookingsTab(u) {
+  const received = db.bookings.filter(b => b.freelancerId === u.id), mine = db.bookings.filter(b => b.clientId === u.id);
+  const order = b => ({ PENDING: 0, AWAITING_PAYMENT: 1, CONFIRMED: 2, COMPLETED: 3, CANCELLED: 4 }[b.status] ?? 5);
+  const sorted = list => [...list].sort((a, b) => order(a) - order(b) || (order(a) < 3 ? (a.date + a.start).localeCompare(b.date + b.start) : (b.date + b.start).localeCompare(a.date + a.start)));
+  const row = (b, asFreelancer) => { const other = user(asFreelancer ? b.clientId : b.freelancerId), cat = catById(b.categoryId);
+    let btns = '';
+    if (asFreelancer && b.status === 'PENDING') btns = `<button class="btn btn-primary btn-sm" data-action="bk-confirm" data-id="${b.id}">Confirm</button><button class="btn btn-outline btn-sm" data-action="bk-decline" data-id="${b.id}">Decline</button>`;
+    else if (asFreelancer && b.status === 'CONFIRMED' && !bookingStarted(b)) btns = `<button class="btn btn-ghost btn-sm" data-action="bk-cancel" data-id="${b.id}">Cancel</button>`;
+    else if (!asFreelancer && b.status === 'CONFIRMED' && bookingStarted(b)) btns = `<button class="btn btn-primary btn-sm" data-action="bk-complete" data-id="${b.id}">Mark as completed</button>`;
+    else if (!asFreelancer && ['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(b.status)) btns = `<button class="btn btn-ghost btn-sm" data-action="bk-cancel" data-id="${b.id}">Cancel</button>`;
+    return `<div class="booking-row"><div class="when"><b>${fmtDate(b.date, { day: 'numeric' })}</b><small>${fmtDate(b.date, { month: 'short' })}</small></div>
+      <div style="flex:1;min-width:200px"><div><b>${b.start}–${b.end}</b> · ${fmtDate(b.date, { weekday: 'long' })} · ${cat.ico} ${esc(cat.name)}</div>
+        <div class="small"><a href="#/user/${other.id}">${avatar(other, 'sm')} ${esc(other.name)}</a> · 📍 ${esc(b.address)}</div>
+        ${b.notes ? `<div class="small muted">“${esc(b.notes)}”</div>` : ''}${b.status === 'CANCELLED' && b.cancelReason ? `<div class="small muted">Reason: ${esc(b.cancelReason)}</div>` : ''}</div>
+      <div class="booking-side"><b>${money(b.totalPrice)}</b>${statusTag(b.status)}<div class="booking-btns"><a class="btn btn-ghost btn-sm" href="#/messages/${other.id}" aria-label="Message">💬</a>${btns}</div></div></div>`; };
+  return `<h1>Bookings</h1>
+    ${u.isFreelancer ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Requests from clients ${received.filter(b => b.status === 'PENDING').length ? `<span class="tag orange">${received.filter(b => b.status === 'PENDING').length} to confirm</span>` : ''}</h3>
+      ${received.length ? sorted(received).map(b => row(b, true)).join('') : `<p class="muted">No bookings yet.${u.onboarded ? '' : ' <a href="#/onboarding">Finish your service profile</a> so clients can book you.'}</p>`}</div>` : ''}
+    <div class="card card-pad"><h3>Your bookings</h3>${mine.length ? sorted(mine).map(b => row(b, false)).join('') : '<p class="muted">You haven’t booked anyone yet. <a href="#/freelancers">Find a freelancer</a></p>'}</div>`;
+}
+
+/* ---------- admin: #/admin/verifications ---------- */
+function adminVerifications() {
+  const docs = db.pendingDocuments || [], byUser = {};
+  docs.forEach(d => (byUser[d.userId] = byUser[d.userId] || []).push(d));
+  return `<div class="container" style="padding-top:36px"><a href="#/admin">← Admin panel</a><h1>Verification queue</h1>
+    <p class="muted">Check that each document is genuine, readable and matches the freelancer’s name. Files are deleted from the server as soon as you approve or reject them.</p>
+    ${Object.keys(byUser).length ? Object.entries(byUser).map(([uid, list]) => { const x = user(uid), cat = catById(x.category);
+      return `<div class="card card-pad" style="margin-bottom:16px"><div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">${avatar(x)}<div><a href="#/user/${x.id}"><b>${esc(x.name)}</b></a> <span class="muted small">${esc(x.email || '')}</span>
+        <div class="small muted">${cat.ico} ${esc(cat.name)}${cat.requiresVerification ? ` · needs ${cat.requiredDocuments.map(t => DOC_INFO[t][0]).join(' + ')}` : ' · optional verification'}</div></div></div>
+        ${list.map(d => `<div class="list-item"><div><b>${DOC_INFO[d.type][0]}</b><div class="small muted">${esc(d.fileName || 'file')} · ${esc(d.mime)} · uploaded ${ago(d.uploaded)}</div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${d.hasFile ? `<a class="btn btn-ghost btn-sm" href="${apiUrl('admin/verification-file', '&id=' + d.id)}" target="_blank" rel="noopener">View file</a>` : '<span class="small muted">(file missing)</span>'}
+            <button class="btn btn-outline btn-sm" data-action="doc-reject" data-id="${d.id}">Reject</button><button class="btn btn-primary btn-sm" data-action="doc-approve" data-id="${d.id}">Approve</button></div></div>`).join('')}</div>`; }).join('')
+      : `<div class="card card-pad">${empty('✅', 'No documents waiting for review.')}</div>`}</div>`;
+}
+
 /* ---------- router ---------- */
-const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
 function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
   const parts = path.split('/').filter(Boolean);
@@ -1096,7 +1270,7 @@ function render() {
   const { name, args, q } = parseHash();
   const view = ROUTES[name] || V.notFound;
   renderHeader();
-  try { $('#app').innerHTML = view(args, q); }
+  try { $('#app').innerHTML = view(args, q); if ($('#book-card')) loadSlots(); }
   catch (err) {
     console.error(err);
     $('#app').innerHTML = `<div class="container">${empty('⚠️', 'Something went wrong showing this page.', '<a class="btn btn-primary" href="#/">Go to homepage</a>')}</div>`;
@@ -1191,12 +1365,30 @@ const A = {
   payout: () => openPayout(),
   'read-notif': el => { const n = db.notifications.find(x => x.id === el.dataset.id); if (n && !n.read) { n.read = true; api('notification/read', { id: n.id }).catch(() => {}); } },
   'read-all': () => act('notification/read-all', {}),
-  verify: el => { const ok = el.dataset.ok === '1'; let reason = '';
-    if (!ok) { reason = prompt('Reason for rejection (shown to the user):', 'Document image is unreadable'); if (reason === null) return; }
-    act('admin/verify', { id: el.dataset.id, ok, reason }, ok ? 'User verified ✓' : 'Verification rejected'); },
-  'view-doc': el => { const v = user(el.dataset.id).verification, url = apiUrl('admin/doc', '&id=' + encodeURIComponent(el.dataset.id));
-    modal(`<h2>${esc(v.docType)}</h2><p class="muted">${esc(v.fileName)}</p><img src="${url}" alt="" style="border-radius:12px;width:100%;margin-bottom:12px">
-      <a class="btn btn-outline btn-sm" href="${url}" target="_blank" rel="noopener">Open in new tab</a><p class="small muted">The document is deleted from the server once you approve or reject it.</p>`); },
+  // onboarding
+  'ob-next': () => obGo(+1),
+  'ob-back': () => obGo(-1),
+  'ob-step': el => { obRead(); go('#/onboarding?step=' + el.dataset.step); },
+  'ob-finish': () => { obRead(); act('onboarding/save', { ...OB, complete: true }, null, { after: () => { const id = me().id; OB = null; go('#/user/' + id); render(); toast('Your service profile is live ✓', 'success'); } }); },
+  'ob-preset': el => { obRead(); const P = { weekdays: [['MON', 'TUE', 'WED', 'THU', 'FRI'], '09:00', '17:00'], evenings: [['MON', 'TUE', 'WED', 'THU', 'FRI'], '17:00', '21:00'], weekends: [['SAT', 'SUN'], '10:00', '16:00'] }[el.dataset.preset];
+    if (!P) OB.weeklyAvailability = {}; else P[0].forEach(d => { OB.weeklyAvailability[d] = [{ start: P[1], end: P[2] }]; }); render(); },
+  'ob-add-window': el => { obRead(); const ws = OB.weeklyAvailability[el.dataset.day] || (OB.weeklyAvailability[el.dataset.day] = []); const from = ws.length ? Math.min(minutesOf(ws[ws.length - 1].end) + 60, 22 * 60) : 9 * 60; ws.push({ start: hhmm(from), end: hhmm(Math.min(from + 120, 23 * 60 + 30)) }); render(); },
+  'ob-remove-window': el => { obRead(); const ws = OB.weeklyAvailability[el.dataset.day] || []; ws.splice(+el.dataset.i, 1); if (!ws.length) delete OB.weeklyAvailability[el.dataset.day]; render(); },
+  // booking card
+  'bk-day': el => { BK.date = el.dataset.date; BK.start = ''; loadSlots(); },
+  'bk-slot': el => { BK.start = el.dataset.start; drawBooking(); },
+  'bk-request': () => { if (!requireLogin()) return; const addr = $('#bk-address'), notes = $('#bk-notes');
+    act('booking/create', { freelancerId: BK.fid, date: BK.date, start: BK.start, duration: BK.duration, address: addr ? addr.value : '', notes: notes ? notes.value : '' }, null, { errEl: $('#bk-err'), after: r => {
+      if (r.checkoutUrl) { location.href = r.checkoutUrl; return; }
+      go('#/dashboard/bookings'); render(); toast('Booking requested ✓ The freelancer will confirm it.', 'success'); } }); },
+  // bookings dashboard
+  'bk-confirm': el => act('booking/respond', { id: el.dataset.id, accept: true }, 'Booking confirmed ✓'),
+  'bk-decline': el => { const reason = prompt('Why are you declining? (shown to the client)', 'Sorry, I can’t make it at that time.'); if (reason === null) return; act('booking/respond', { id: el.dataset.id, accept: false, reason }, 'Booking declined'); },
+  'bk-cancel': el => { const reason = prompt('Cancel this booking? Optionally tell the other person why:', ''); if (reason === null) return; act('booking/cancel', { id: el.dataset.id, reason }, null, { after: r => { render(); toast(r.refunded ? 'Booking cancelled and refunded.' : 'Booking cancelled.'); } }); },
+  'bk-complete': el => { if (confirm('Was the work done? This releases the payment to the freelancer.')) act('booking/complete', { id: el.dataset.id }, 'Thanks! Payment released to the freelancer.'); },
+  // admin verification review
+  'doc-approve': el => act('admin/verification-review', { id: el.dataset.id, ok: true }, null, { after: r => { render(); toast(r.status === 'verified' ? 'Approved: freelancer is now verified ✓' : 'Document approved', 'success'); } }),
+  'doc-reject': el => { const reason = prompt('Reason for rejection (shown to the freelancer):', 'The photo is unreadable. Please upload a clearer one.'); if (reason === null) return; act('admin/verification-review', { id: el.dataset.id, ok: false, reason }, 'Document rejected'); },
   'mark-paid': el => { if (!confirm('Have you sent this payout? The user will be notified.')) return; act('admin/payout-paid', { id: el.dataset.id }, 'Marked as paid'); },
 };
 // Remember which button started an action so act() can show a spinner on it (capture phase runs first).
@@ -1232,6 +1424,9 @@ async function uploadPhoto(input) {
 }
 document.addEventListener('change', e => {
   if (e.target.id === 'photo-input') { uploadPhoto(e.target); return; }
+  if (e.target.closest('#ob-form') && e.target.dataset.rerender !== undefined) { obRead(); render(); return; }
+  if (e.target.id === 'bk-duration') { BK.duration = +e.target.value; BK.start = ''; loadSlots(); return; }
+  if (e.target.id === 'bk-date') { BK.date = e.target.value; BK.start = ''; loadSlots(); return; }
   if (e.target.dataset.action === 'sort') setQuery({ sort: e.target.value });
   if (e.target.dataset.role === 'city') { // refill the area list (and "areas you cover") for the chosen city
     const cover = e.target.form && e.target.form.querySelector('[data-role="cover-areas"]');
@@ -1256,10 +1451,14 @@ document.addEventListener('keydown', e => {
 /* ---------- forms ---------- */
 document.addEventListener('submit', e => {
   const form = e.target, f = new FormData(form), id = form.id;
+  if (form.classList.contains('doc-form')) { e.preventDefault(); const file = f.get('doc');
+    if (!file || !file.size) return toast('Please choose a file.', 'error');
+    if (file.size > 5 * 1024 * 1024) return toast('The file is too large (max 5 MB).', 'error');
+    act('verification/document', f, 'Document uploaded ✓ We’ll review it soon.'); return; }
   const handlers = {
     'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
-    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time') };
+    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };
       Object.keys(q).forEach(k => !q[k] && delete q[k]); const { name } = parseHash(); go(`#/${name}?` + new URLSearchParams(q)); },
     'project-form': () => {
       if (+f.get('max') < +f.get('min')) return toast('Max budget must be greater than min budget.');
@@ -1271,12 +1470,10 @@ document.addEventListener('submit', e => {
       }, 'Service published!', { after: r => go('#/service/' + r.id) }),
     'chat-form': () => { const text = (f.get('text') || '').trim(); if (!text) return;
       act('message/send', { to: form.dataset.to, text }, null, { after: () => { render(); const i = $('#chat-form input'); i && i.focus(); } }); },
-    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), category: f.get('category'), rate: f.get('rate'), bio: f.get('bio'), skills: f.get('skills'), ...readFreelancerFields(f) }, 'Profile saved'),
+    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), bio: f.get('bio'), skills: f.get('skills') }, 'Profile saved'),
     'contact-form': () => act('contact/send', { name: f.get('name'), email: f.get('email'), subject: f.get('subject'), message: f.get('message') },
       'Thanks! We’ll get back to you within one business day.', { after: () => form.reset() }),
-    'verify-form': () => { const file = f.get('doc'); if (!file || !file.size) return toast('Please choose a file.');
-      if (file.size > 5 * 1024 * 1024) return toast('The file is too large (max 5 MB).');
-      act('verification/submit', f, 'Document submitted. We’ll notify you when it’s reviewed.'); },
+
   };
   if (handlers[id]) { e.preventDefault(); handlers[id](); }
 });

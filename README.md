@@ -102,3 +102,33 @@ so other file types are refused even if renamed.
 The bucket can stay private: the app serves photos at `/api/files/...` with long browser caching.
 If you connect a custom domain to the bucket (bucket → Settings → Custom Domains), set
 `R2_PUBLIC_URL` to it and photos are linked there directly instead.
+
+## Local services: categories, onboarding and bookings
+
+**Categories** live in the database (`wl_categories`, `wl_subcategories`, seeded by migration
+`0004`). Each has a `service_type` (`REMOTE`, `ON_SITE`, `HYBRID`), `requires_verification`, the
+`required_documents` for verification, and suggested `perks`. Home & Cleaning, Childcare & Family
+and Driving & Transport require a government ID (Driving also a driver's licence).
+
+**Onboarding** (`#/onboarding`): after signing up, freelancers set up their service profile in steps:
+1. category, subcategories, speciality and, for on-site work, city, area, travel radius and areas covered
+2. pricing type (hourly, package/session, per event), price, unit label and perks
+3. weekly availability (time windows per day), booking slot length and same-day bookings
+4. verification uploads, only for categories that require it
+
+Everything is editable later from Profile settings.
+
+**Verification**: documents (`wl_verification_documents`) are reviewed at `#/admin/verifications`.
+Files are stored in the database only until they're approved or rejected, then deleted; the record
+of the check stays. A freelancer is `verified` once the newest document of each required type is
+approved.
+
+**Bookings** (`wl_bookings`): clients pick a date, a free time and (for hourly work) a duration on
+the freelancer's profile. Free times come from the weekly availability minus existing bookings
+(`GET /api?r=slots&freelancer=…&date=…&duration=…`, logic in `scheduling.mjs`, Estonian local time).
+Same-day bookings are only offered if the freelancer accepts them. A database exclusion constraint
+makes double bookings impossible. With Stripe configured, the client pays when requesting; the
+money is refunded if the freelancer declines or the booking is cancelled, and released to the
+freelancer (minus the platform fee) when the client marks it completed. Freelancers confirm or
+decline under **Dashboard → Bookings**; confirmed bookings can be cancelled by the client up to
+24 hours before the start.
