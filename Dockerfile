@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage: install all deps and build the Vite frontend ----
-FROM node:26-bookworm-slim AS build
+FROM node:26.13.1-bookworm-slim AS build
 WORKDIR /app
 
 # Toolchain in case better-sqlite3 has no prebuilt binary for the platform
@@ -20,17 +20,17 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ---- Runtime stage ----
-FROM node:26-bookworm-slim AS runtime
+FROM node:26.13.1-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=3000 \
-    DB_PATH=/data/worklay.sqlite
+    PORT=3000
 WORKDIR /app
 
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.mjs /app/payments.mjs ./
+COPY --from=build /app/db ./db
 
 RUN mkdir -p /data && chown -R node:node /data /app
 USER node

@@ -70,9 +70,53 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 
 | Setting | Notes |
 |---|---|
+| `POSTGRES_PASSWORD` | **required**: password for the database container; letters and digits only, e.g. `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"` |
 | `PUBLIC_URL` | `https://worklay.com` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in; the Google client must allow `https://worklay.com/api/auth/google/callback` |
 | `STRIPE_SECRET_KEY` | live key `sk_live_…` once Stripe live mode is set up; leave empty to keep manual payouts |
 | `STRIPE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint `https://worklay.com/api/payments/webhook` |
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
+
+## Switching the live site from SQLite to PostgreSQL (once)
+
+Older versions stored everything in a SQLite file inside the `worklay-data` Docker volume. The
+current version uses a PostgreSQL container instead. To move over without losing data, run these
+in the project folder on the server:
+
+1. Add `POSTGRES_PASSWORD=...` to `.env`. Do this **before** merging the Postgres change if the
+   automatic deploy is set up: without it, `docker compose` refuses to start, and the old version
+   keeps running.
+2. Get the new code and start only the database:
+   ```bash
+   git pull
+   docker compose up -d --wait db
+   ```
+3. Build the new app image, and copy the old data across while the app is stopped, so nobody
+   signs up halfway through:
+   ```bash
+   docker compose stop worklay
+   docker compose build worklay
+   docker compose run --rm --no-deps worklay node db/import-sqlite.mjs /data/worklay.sqlite
+   ```
+   It creates the tables, copies every row and lists any rows it had to skip. It refuses to run
+   if the Postgres database already has users.
+4. Start the app:
+   ```bash
+   docker compose up -d
+   ```
+5. Check the site: log in with an existing account and look at a few projects and orders.
+
+The SQLite file stays in the `worklay-data` volume as a backup. Once you're happy, it can be
+removed, and `better-sqlite3` can be dropped from `package.json` in a later change.
+
+## Backups
+
+Back up the database regularly, for example daily with cron:
+
+```bash
+docker compose exec -T db pg_dump -U worklay -d worklay --format=custom > backup-$(date +%F).dump
+```
+
+Restore into an empty database with `pg_restore -U worklay -d worklay --clean backup.dump` (run it
+inside the `db` container), and keep copies somewhere other than this server.

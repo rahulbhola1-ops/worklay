@@ -1,13 +1,35 @@
+# Production: the Worklay app plus its PostgreSQL database.
+# Settings come from a .env file next to this file (see .env.example).
 services:
+  db:
+    image: postgres:18.7-alpine3.24
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-worklay}
+      POSTGRES_USER: ${POSTGRES_USER:-worklay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - worklay-pg:/var/lib/postgresql # Postgres 18+ keeps its data below this folder
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   worklay:
     build: .
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "3019:3000"
     environment:
       PORT: 3000
       HOST: 0.0.0.0
+      DATABASE_URL: postgres://${POSTGRES_USER:-worklay}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-worklay}
+      # Old SQLite file, only used by the one-off import (npm run db:import-sqlite)
       DB_PATH: /data/worklay.sqlite
-      # Sign in with Google (optional). Set these in a .env file next to this compose file.
+      # Sign in with Google (optional)
       PUBLIC_URL: ${PUBLIC_URL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -19,4 +41,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  worklay-pg:
   worklay-data:
