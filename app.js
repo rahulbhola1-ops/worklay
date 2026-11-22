@@ -92,8 +92,8 @@ function locationFields(city = '', area = '', { required = false, any = false } 
   const req = required ? 'required' : '';
   const areas = CITIES[city] || [];
   return `<div class="row">
-    <div class="field"><label>City</label><select name="city" data-role="city" ${req}><option value="">${any ? 'All cities' : 'Select city'}</option>${Object.keys(CITIES).map(c => `<option ${c === city ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
-    <div class="field"><label>Area</label><select name="area" data-role="area" data-any="${any ? 1 : ''}" ${req} ${areas.length ? '' : 'disabled'}><option value="">${any ? 'All areas' : 'Select area'}</option>${areas.map(a => `<option ${a === area ? 'selected' : ''}>${a}</option>`).join('')}</select></div></div>`;
+    <div class="field"><label>${t('loc.city')}</label><select name="city" data-role="city" ${req}><option value="">${any ? t('hero.allCities') : t('loc.selectCity')}</option>${Object.keys(CITIES).map(c => `<option ${c === city ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+    <div class="field"><label>${t('loc.area')}</label><select name="area" data-role="area" data-any="${any ? 1 : ''}" ${req} ${areas.length ? '' : 'disabled'}><option value="">${any ? t('loc.allAreas') : t('loc.selectArea')}</option>${areas.map(a => `<option ${a === area ? 'selected' : ''}>${a}</option>`).join('')}</select></div></div>`;
 }
 // Proximity: 2 = same area, 1 = same city, 0 = elsewhere
 const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.area && (a.area === b.area || (b.serviceAreas || []).includes(a.area)) ? 2 : 1);
@@ -153,6 +153,14 @@ const I18N = {
     'cookie.settingsIntro': 'Выберите, какие cookie вы разрешаете. Строго необходимые cookie включены всегда, потому что без них сайт не работает.',
     'cookie.necessary': 'Строго необходимые', 'cookie.necessaryDesc': 'Вход в систему, выбор языка и эти настройки cookie.', 'cookie.alwaysOn': 'Всегда включены',
     'cookie.analytics': 'Аналитика', 'cookie.analyticsDesc': 'Помогает нам понять, как используется сайт. Мы пока не используем инструменты аналитики, поэтому сейчас включение этой опции ничего не меняет.',
+    'auth.welcomeBack': 'С возвращением', 'auth.loginSub': 'Войдите в свой аккаунт', 'auth.join': 'Присоединяйтесь к Worklay', 'auth.joinSub': 'Создайте бесплатный аккаунт',
+    'auth.googleContinue': 'Продолжить с Google', 'auth.googleSignup': 'Зарегистрироваться через Google', 'auth.googleTerms': 'Продолжая с Google, вы принимаете Условия использования и подтверждаете ознакомление с {privacy}.', 'auth.privacyLink': 'Политикой конфиденциальности', 'auth.or': 'или',
+    'auth.email': 'Электронная почта', 'auth.password': 'Пароль', 'auth.noAccount': 'Нет аккаунта?', 'auth.haveAccount': 'Уже есть аккаунт?', 'auth.show': 'Показать', 'auth.hide': 'Скрыть',
+    'auth.iWant': 'Я хочу', 'auth.hire': 'Нанимать фрилансеров', 'auth.work': 'Работать фрилансером', 'auth.fullName': 'Имя и фамилия', 'auth.mainCategory': 'Основная категория услуг', 'auth.whatDo': 'Чем вы занимаетесь?', 'auth.whatDoPh': 'например, фотограф, няня',
+    'auth.nextSteps': 'Далее вы укажете цены, часы работы и, для некоторых услуг, загрузите удостоверение личности для проверки.', 'auth.pwPh': 'Не менее 8 символов', 'auth.terms': 'Я принимаю Условия использования и подтверждаю ознакомление с {privacy}', 'auth.create': 'Создать аккаунт',
+    'auth.welcomeBackName': 'С возвращением, {name}!', 'auth.createdWork': 'Аккаунт создан! Теперь настройте профиль услуг.', 'auth.createdHire': 'Аккаунт создан! Разместите свой первый проект.', 'auth.createdGoogle': 'Аккаунт создан через Google! Укажите город и район, чтобы люди поблизости могли вас найти.',
+    'auth.googleDisabled': 'Вход через Google сейчас недоступен.', 'auth.googleState': 'Время входа через Google истекло. Попробуйте ещё раз.', 'auth.googleCancelled': 'Вход через Google отменён.', 'auth.googleUnverified': 'Ваш адрес электронной почты в Google не подтверждён, поэтому мы не можем использовать его для входа.', 'auth.googleFailed': 'Не удалось войти через Google. Попробуйте ещё раз.',
+    'loc.city': 'Город', 'loc.area': 'Район', 'loc.selectCity': 'Выберите город', 'loc.selectArea': 'Выберите район', 'loc.allAreas': 'Все районы',
   },
 };
 const EN = {
@@ -180,6 +188,14 @@ const EN = {
   'cookie.settingsIntro': 'Choose which cookies you allow. Strictly necessary cookies are always on because the site cannot work without them.',
   'cookie.necessary': 'Strictly necessary', 'cookie.necessaryDesc': 'Login, language preference and these cookie choices.', 'cookie.alwaysOn': 'Always on',
   'cookie.analytics': 'Analytics', 'cookie.analyticsDesc': 'Helps us understand how the site is used. We don’t use any analytics tools yet, so turning this on changes nothing for now.',
+  'auth.welcomeBack': 'Welcome back', 'auth.loginSub': 'Log in to your account', 'auth.join': 'Join Worklay', 'auth.joinSub': 'Create your free account',
+  'auth.googleContinue': 'Continue with Google', 'auth.googleSignup': 'Sign up with Google', 'auth.googleTerms': 'By continuing with Google you agree to the Terms of Service and have read the {privacy}.', 'auth.privacyLink': 'Privacy Policy', 'auth.or': 'or',
+  'auth.email': 'Email', 'auth.password': 'Password', 'auth.noAccount': 'Don’t have an account?', 'auth.haveAccount': 'Already have an account?', 'auth.show': 'Show', 'auth.hide': 'Hide',
+  'auth.iWant': 'I want to', 'auth.hire': 'Hire freelancers', 'auth.work': 'Work as a freelancer', 'auth.fullName': 'Full name', 'auth.mainCategory': 'Main service category', 'auth.whatDo': 'What do you do?', 'auth.whatDoPh': 'e.g. Photographer, Babysitter',
+  'auth.nextSteps': 'Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.', 'auth.pwPh': 'At least 8 characters', 'auth.terms': 'I agree to the Terms of Service and have read the {privacy}', 'auth.create': 'Create account',
+  'auth.welcomeBackName': 'Welcome back, {name}!', 'auth.createdWork': 'Account created! Now set up your service profile.', 'auth.createdHire': 'Account created! Post your first project.', 'auth.createdGoogle': 'Account created with Google! Add your city and area so people nearby can find you.',
+  'auth.googleDisabled': 'Sign-in with Google is not available right now.', 'auth.googleState': 'Your Google sign-in expired. Please try again.', 'auth.googleCancelled': 'Google sign-in was cancelled.', 'auth.googleUnverified': 'Your Google email address is not verified, so we can’t use it to sign you in.', 'auth.googleFailed': 'Google sign-in failed. Please try again.',
+  'loc.city': 'City', 'loc.area': 'Area', 'loc.selectCity': 'Select city', 'loc.selectArea': 'Select area', 'loc.allAreas': 'All areas',
 };
 let lang = 'en';
 const t = k => (I18N[lang] && I18N[lang][k]) || EN[k] || k;
@@ -437,11 +453,11 @@ function openLogin() { openAuth('login'); }
 const GOOGLE_G = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 // Messages for ?auth_error=… / ?welcome=… set by the server after the Google redirect.
 const GOOGLE_MESSAGES = {
-  google_disabled: ['Sign-in with Google is not available right now.', 'error'],
-  google_state: ['Your Google sign-in expired. Please try again.', 'error'],
-  google_cancelled: ['Google sign-in was cancelled.', ''],
-  google_unverified: ['Your Google email address is not verified, so we can’t use it to sign you in.', 'error'],
-  google_failed: ['Google sign-in failed. Please try again.', 'error'],
+  google_disabled: ['auth.googleDisabled', 'error'],
+  google_state: ['auth.googleState', 'error'],
+  google_cancelled: ['auth.googleCancelled', ''],
+  google_unverified: ['auth.googleUnverified', 'error'],
+  google_failed: ['auth.googleFailed', 'error'],
 };
 const PAYMENT_MESSAGES = {
   success: ['Payment received ✓ The money is held safely and released only after you approve the work.', 'success'],
@@ -462,54 +478,54 @@ function handleGoogleReturn() {
     return;
   }
   if (!q.auth_error && !q.welcome && !q.signed_in) return;
-  if (q.auth_error) { const [msg, kind] = GOOGLE_MESSAGES[q.auth_error] || GOOGLE_MESSAGES.google_failed; toast(msg, kind); }
-  else if (q.welcome === 'google') toast('Account created with Google! Add your city and area so people nearby can find you.', 'success');
-  else if (q.signed_in === 'google' && me()) toast(`Welcome back, ${esc(me().name.split(' ')[0])}!`, 'success');
+  if (q.auth_error) { const [msg, kind] = GOOGLE_MESSAGES[q.auth_error] || GOOGLE_MESSAGES.google_failed; toast(t(msg), kind); }
+  else if (q.welcome === 'google') toast(t('auth.createdGoogle'), 'success');
+  else if (q.signed_in === 'google' && me()) toast(t('auth.welcomeBackName').replace('{name}', esc(me().name.split(' ')[0])), 'success');
   const { name, args } = parseHash(), rest = { ...q }; delete rest.auth_error; delete rest.welcome; delete rest.signed_in;
   const qs = new URLSearchParams(rest).toString();
   history.replaceState(null, '', '#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
 }
-const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">Show</button></div>`;
+const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">${t('auth.show')}</button></div>`;
 function openAuth(mode = 'login', intent = 'hire') {
   const err = '<p class="auth-err" role="alert" style="color:#d92d50;min-height:1.2em;margin:0 0 8px;font-size:.9rem"></p>';
   modal(`<div style="text-align:center;margin-bottom:18px"><svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#3858FF"/><path d="M7 10l4 13 5-9 5 9 4-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <h2 style="margin:8px 0 0">${mode === 'login' ? 'Welcome back' : 'Join Worklay'}</h2><p class="muted" style="margin:4px 0 0">${mode === 'login' ? 'Log in to your account' : 'Create your free account'}</p></div>
-    <div class="tabs" style="width:100%;margin-bottom:18px"><button style="flex:1" class="${mode === 'login' ? 'active' : ''}" data-action="auth-tab" data-mode="login">Log in</button><button style="flex:1" class="${mode === 'signup' ? 'active' : ''}" data-action="auth-tab" data-mode="signup">Sign up</button></div>
-    ${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? 'Continue with Google' : 'Sign up with Google'}</button>
-      <p class="small muted" style="text-align:center;margin:8px 0 0">By continuing with Google you agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a>.</p>
-      <div class="auth-divider"><span>or</span></div>` : ''}
+      <h2 style="margin:8px 0 0">${mode === 'login' ? t('auth.welcomeBack') : t('auth.join')}</h2><p class="muted" style="margin:4px 0 0">${mode === 'login' ? t('auth.loginSub') : t('auth.joinSub')}</p></div>
+    <div class="tabs" style="width:100%;margin-bottom:18px"><button style="flex:1" class="${mode === 'login' ? 'active' : ''}" data-action="auth-tab" data-mode="login">${t('cta.login')}</button><button style="flex:1" class="${mode === 'signup' ? 'active' : ''}" data-action="auth-tab" data-mode="signup">${t('cta.signup')}</button></div>
+    ${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? t('auth.googleContinue') : t('auth.googleSignup')}</button>
+      <p class="small muted" style="text-align:center;margin:8px 0 0">${t('auth.googleTerms').replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</p>
+      <div class="auth-divider"><span>${t('auth.or')}</span></div>` : ''}
     ${mode === 'login' ? `<form id="login-form">
-      <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
-      <div class="field"><label>Password</label>${pwField('password', 'current-password')}</div>
-      ${err}<button class="btn btn-primary btn-block">Log in</button>
-      <p class="small muted" style="text-align:center">Don't have an account? <a href="#" data-action="auth-tab" data-mode="signup">Sign up</a></p></form>`
+      <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
+      <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'current-password')}</div>
+      ${err}<button class="btn btn-primary btn-block">${t('cta.login')}</button>
+      <p class="small muted" style="text-align:center">${t('auth.noAccount')} <a href="#" data-action="auth-tab" data-mode="signup">${t('cta.signup')}</a></p></form>`
     : `<form id="signup-form">
-      <div class="field"><label>I want to</label><div class="row">
-        <label class="choice"><input type="radio" name="intent" value="hire" ${intent !== 'work' ? 'checked' : ''}><span class="big-ico">🧑‍💼</span> Hire freelancers</label>
-        <label class="choice"><input type="radio" name="intent" value="work" ${intent === 'work' ? 'checked' : ''}><span class="big-ico">🛠️</span> Work as a freelancer</label></div></div>
-      <div class="field"><label>Full name</label><input name="name" required maxlength="60" autocomplete="name"></div>
+      <div class="field"><label>${t('auth.iWant')}</label><div class="row">
+        <label class="choice"><input type="radio" name="intent" value="hire" ${intent !== 'work' ? 'checked' : ''}><span class="big-ico">🧑‍💼</span> ${t('auth.hire')}</label>
+        <label class="choice"><input type="radio" name="intent" value="work" ${intent === 'work' ? 'checked' : ''}><span class="big-ico">🛠️</span> ${t('auth.work')}</label></div></div>
+      <div class="field"><label>${t('auth.fullName')}</label><input name="name" required maxlength="60" autocomplete="name"></div>
       ${locationFields('', '', { required: true })}
-      <div class="fl-only"><div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.ico} ${c.name}</option>`).join('')}</select></div>
-        <div class="field"><label>What do you do?</label><input name="title" maxlength="60" placeholder="e.g. Photographer, Babysitter"></div></div>
-        <p class="small muted" style="margin-top:-6px">Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.</p></div>
-      <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
-      <div class="field"><label>Password</label>${pwField('password', 'new-password', 'minlength="8" placeholder="At least 8 characters"')}</div>
-      <label class="filter-opt small"><input type="checkbox" name="terms" required> I agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a></label>
-      ${err}<button class="btn btn-primary btn-block">Create account</button>
-      <p class="small muted" style="text-align:center">Already have an account? <a href="#" data-action="auth-tab" data-mode="login">Log in</a></p></form>`}`, m => {
+      <div class="fl-only"><div class="row"><div class="field"><label>${t('auth.mainCategory')}</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.ico} ${t(`category.${c.id}`)}</option>`).join('')}</select></div>
+        <div class="field"><label>${t('auth.whatDo')}</label><input name="title" maxlength="60" placeholder="${esc(t('auth.whatDoPh'))}"></div></div>
+        <p class="small muted" style="margin-top:-6px">${t('auth.nextSteps')}</p></div>
+      <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
+      <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'new-password', `minlength="8" placeholder="${esc(t('auth.pwPh'))}"`)}</div>
+      <label class="filter-opt small"><input type="checkbox" name="terms" required> ${t('auth.terms').replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</label>
+      ${err}<button class="btn btn-primary btn-block">${t('auth.create')}</button>
+      <p class="small muted" style="text-align:center">${t('auth.haveAccount')} <a href="#" data-action="auth-tab" data-mode="login">${t('cta.login')}</a></p></form>`}`, m => {
     const errEl = $('.auth-err', m);
     const lf = $('#login-form', m), sf = $('#signup-form', m);
     if (lf) lf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(lf);
       act('auth/login', { email: f.get('email'), password: f.get('password') }, null, { errEl, after: () => {
-        closeModal(); render(); toast(`Welcome back, ${esc(me().name.split(' ')[0])}!`); } });
+        closeModal(); render(); toast(t('auth.welcomeBackName').replace('{name}', esc(me().name.split(' ')[0]))); } });
     };
     if (sf) sf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(sf), work = f.get('intent') === 'work';
       const title = (f.get('title') || '').trim() || catById(f.get('category')).name + ' freelancer';
       act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
         closeModal(); OB = null; go(work ? '#/onboarding' : '#/post-project'); render();
-        toast(work ? 'Account created! Now set up your service profile.' : 'Account created! Post your first project.'); } });
+        toast(work ? t('auth.createdWork') : t('auth.createdHire')); } });
     };
   });
 }
@@ -1355,7 +1371,7 @@ const A = {
     if (key === 'cat') setQuery({ cat: (q.cat || '').split(',').filter(c => c && c !== val).join(',') });
     else if (key === 'city') setQuery({ city: '', area: '' });
     else setQuery({ [key]: '' }); },
-  'toggle-pw': el => { const i = el.parentElement.querySelector('input'); const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? 'Hide' : 'Show'; },
+  'toggle-pw': el => { const i = el.parentElement.querySelector('input'); const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? t('auth.hide') : t('auth.show'); },
   'near-me': () => { const u = me(); setQuery({ city: u.city, area: u.area }); },
   widen: () => setQuery({ area: '' }),
   'auth-tab': el => openAuth(el.dataset.mode),
@@ -1463,7 +1479,7 @@ document.addEventListener('change', e => {
     if (cover) cover.innerHTML = areaChecks(e.target.value);
     const areaSel = e.target.form && e.target.form.querySelector('[data-role="area"]'); if (!areaSel) return;
     const areas = CITIES[e.target.value] || [];
-    areaSel.innerHTML = `<option value="">${areaSel.dataset.any ? 'All areas' : 'Select area'}</option>` + areas.map(a => `<option>${a}</option>`).join('');
+    areaSel.innerHTML = `<option value="">${areaSel.dataset.any ? t('loc.allAreas') : t('loc.selectArea')}</option>` + areas.map(a => `<option>${a}</option>`).join('');
     areaSel.disabled = !areas.length;
   }
 });
