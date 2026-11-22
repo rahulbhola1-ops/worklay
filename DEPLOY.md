@@ -75,6 +75,8 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in; the Google client must allow `https://worklay.com/api/auth/google/callback` |
 | `STRIPE_SECRET_KEY` | live key `sk_live_…` once Stripe live mode is set up; leave empty to keep manual payouts |
 | `STRIPE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint `https://worklay.com/api/payments/webhook` |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | profile photo uploads to the Cloudflare R2 bucket (`R2_BUCKET`, default `worklay`); leave empty to switch uploads off |
+| `R2_PUBLIC_URL` | optional public custom domain of the bucket; empty = photos are served through the app |
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
 

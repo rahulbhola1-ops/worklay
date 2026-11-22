@@ -6,6 +6,8 @@ import multer from 'multer';
 import { createDb, sql, changed, isUniqueViolation } from './db/index.mjs';
 import { migrateToLatest } from './db/migrate.mjs';
 import { createPayments, PLATFORM_FEE } from './payments.mjs';
+import { createStorage, detectImage } from './storage.mjs';
+import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load settings such as DATABASE_URL and GOOGLE_CLIENT_ID from a local .env file if there is one.
@@ -20,6 +22,9 @@ if (process.env.MIGRATE_ON_START !== 'false') await migrateToLatest(db);
 // Card payments through Stripe Connect; disabled (manual payouts) without STRIPE_SECRET_KEY.
 const payments = createPayments({ db, notify, publicOrigin });
 const MIN_PAYOUT = 20;
+// Profile photos in Cloudflare R2; uploads are switched off without R2 keys.
+const storage = createStorage();
+const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 const netOf = amount => Math.round(Number(amount) * (1 - PLATFORM_FEE) * 100) / 100;
 
 payments.registerRoutes(app, { me }); // before express.json: the Stripe webhook needs the raw body
@@ -159,6 +164,49 @@ app.get('/api/auth/google/callback', async (req, res) => {
 /* ---------- JSON API: /api?r=<route> ---------- */
 const bad = (res, error, status = 400) => res.status(status).json({ error });
 
+/* ---------- Profile photos ---------- */
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PHOTO_BYTES, files: 1 } });
+app.post('/api/profile/photo', (req, res, next) => photoUpload.single('photo')(req, res, err => {
+  if (err) return bad(res, err.code === 'LIMIT_FILE_SIZE' ? 'The photo is too large (max 3 MB).' : 'The upload failed. Please try again.');
+  next();
+}), async (req, res) => {
+  try {
+    const u = await me(req);
+    if (!u) return bad(res, 'Please log in first.', 401);
+    if (!storage.enabled) return bad(res, 'Photo uploads are not set up.');
+    if (!req.file) return bad(res, 'Please choose a photo.');
+    const img = detectImage(req.file.buffer); // check the real file contents, not the name
+    if (!img) return bad(res, 'Please upload a JPG, PNG or WebP image.');
+    const key = `avatars/${u.id}/${crypto.randomUUID()}.${img.ext}`;
+    await storage.put(key, req.file.buffer, img.type);
+    await db.updateTable('wl_users').set({ avatar_key: key }).where('id', '=', u.id).execute();
+    if (u.avatar_key) storage.remove(u.avatar_key).catch(e => console.error('Could not delete old photo', u.avatar_key, e.message));
+    return res.json({ ok: true, url: storage.urlFor(key) });
+  } catch (e) {
+    console.error(e);
+    if (!res.headersSent) res.status(502).json({ error: 'Could not save the photo. Please try again.' });
+  }
+});
+
+// Serves photos from the private bucket. Every upload gets a new random name, so browsers and
+// Cloudflare can cache each file forever.
+app.get('/api/files/avatars/:uid/:file', async (req, res) => {
+  const { uid, file } = req.params;
+  if (!storage.enabled || !/^\d+$/.test(uid) || !/^[0-9a-f-]{36}\.(jpg|png|webp)$/.test(file)) return res.status(404).end();
+  try {
+    const obj = await storage.get(`avatars/${uid}/${file}`);
+    if (!obj) return res.status(404).end();
+    res.setHeader('Content-Type', obj.headers.get('content-type') || 'application/octet-stream');
+    if (obj.headers.get('content-length')) res.setHeader('Content-Length', obj.headers.get('content-length'));
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    Readable.fromWeb(obj.body).pipe(res);
+  } catch (e) {
+    console.error(e);
+    if (!res.headersSent) res.status(502).end();
+  }
+});
+
 app.all('/api', upload.single('doc'), async (req, res) => {
   const route = String(req.query.r || '');
   const data = req.method === 'POST' ? (req.body || {}) : {};
@@ -217,6 +265,14 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         } catch (e) {
           if (isUniqueViolation(e)) return bad(res, 'Another account already uses that email.');
           throw e;
+        }
+        return res.json({ ok: true });
+      }
+      case 'profile/photo-remove': {
+        const u = requireLogin(); if (!u) return;
+        if (u.avatar_key) {
+          await db.updateTable('wl_users').set({ avatar_key: null }).where('id', '=', u.id).execute();
+          if (storage.enabled) storage.remove(u.avatar_key).catch(e => console.error('Could not delete photo', u.avatar_key, e.message));
         }
         return res.json({ ok: true });
       }
@@ -421,7 +477,7 @@ async function bootstrap(user) {
       const out = {
         id: sid(u.id), name: u.name, title: u.title, country: u.country, city: u.city, area: u.area,
         bio: u.bio || '', skills: list(u.skills), isFreelancer: u.is_freelancer,
-        category: u.category, rate: u.rate, role: u.role, color: u.color, joined: iso(u.created_at),
+        category: u.category, rate: u.rate, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
         verification: { status: u.ver_status },
         stats: { inQueue: oStats.get(u.id)?.in_queue || 0, doneServices: oStats.get(u.id)?.done || 0, doneProjects: pStats.get(u.id) || 0 },
         balance: self ? u.balance : 0,
@@ -450,7 +506,7 @@ async function bootstrap(user) {
     payouts: payouts.map(p => ({ id: sid(p.id), userId: sid(p.user_id), amount: p.amount, method: p.method, details: p.details, status: p.status, created: iso(p.created_at) })),
     posts: posts.map(p => ({ id: sid(p.id), title: p.title, emoji: p.emoji, color: p.color, excerpt: p.excerpt, body: p.body, created: iso(p.created_at) })),
     payments: paymentList,
-    config: { cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled },
+    config: { cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
   };
 }
 
@@ -533,6 +589,9 @@ async function mutateOrderStatus(res, u, data, status) {
   }
   return res.json({ ok: true });
 }
+
+// Unknown API addresses get a 404 instead of the web page.
+app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
 if (!process.argv.includes('--dev')) {
   app.use(express.static(path.join(__dirname, 'dist')));
