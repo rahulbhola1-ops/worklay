@@ -78,37 +78,21 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
 
-## Switching the live site from SQLite to PostgreSQL (once)
+## Moving the live site to PostgreSQL (once)
 
-Older versions stored everything in a SQLite file inside the `worklay-data` Docker volume. The
-current version uses a PostgreSQL container instead. To move over without losing data, run these
-in the project folder on the server:
+Older versions stored data in a SQLite file. That data is **not** carried over: the PostgreSQL
+version starts with an empty database, so existing accounts, services, projects and orders on the
+live site will no longer appear, and people need to sign up again.
 
-1. Add `POSTGRES_PASSWORD=...` to `.env`. Do this **before** merging the Postgres change if the
-   automatic deploy is set up: without it, `docker compose` refuses to start, and the old version
-   keeps running.
-2. Get the new code and start only the database:
-   ```bash
-   git pull
-   docker compose up -d --wait db
-   ```
-3. Build the new app image, and copy the old data across while the app is stopped, so nobody
-   signs up halfway through:
-   ```bash
-   docker compose stop worklay
-   docker compose build worklay
-   docker compose run --rm --no-deps worklay node db/import-sqlite.mjs /data/worklay.sqlite
-   ```
-   It creates the tables, copies every row and lists any rows it had to skip. It refuses to run
-   if the Postgres database already has users.
-4. Start the app:
-   ```bash
-   docker compose up -d
-   ```
-5. Check the site: log in with an existing account and look at a few projects and orders.
+1. Add `POSTGRES_PASSWORD=...` to `.env` on the server. Do this **before** merging the Postgres
+   change if the automatic deploy is set up: without it, `docker compose` refuses to start, and
+   the old version keeps running.
+2. Deploy as usual (or run `git pull && docker compose up -d --build`). The app creates the
+   tables on its first start.
 
-The SQLite file stays in the `worklay-data` volume as a backup. Once you're happy, it can be
-removed, and `better-sqlite3` can be dropped from `package.json` in a later change.
+The old SQLite file is left in the `worklay-data` Docker volume, which nothing uses any more.
+Remove it with `docker volume rm <project>_worklay-data` (see `docker volume ls`) once you're sure
+you don't need it.
 
 ## Backups
 

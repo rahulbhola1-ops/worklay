@@ -27,8 +27,6 @@ services:
       PORT: 3000
       HOST: 0.0.0.0
       DATABASE_URL: postgres://${POSTGRES_USER:-worklay}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-worklay}
-      # Old SQLite file, only used by the one-off import (npm run db:import-sqlite)
-      DB_PATH: /data/worklay.sqlite
       # Sign in with Google (optional)
       PUBLIC_URL: ${PUBLIC_URL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -36,10 +34,7 @@ services:
       # Card payments through Stripe Connect (optional)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-    volumes:
-      - worklay-data:/data
     restart: unless-stopped
 
 volumes:
   worklay-pg:
-  worklay-data:

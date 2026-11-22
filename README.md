@@ -27,7 +27,6 @@ All data lives in PostgreSQL. The schema is defined by migrations in `db/migrati
 |---|---|
 | `npm run db:migrate` | apply pending migrations (also happens on server start) |
 | `npm run db:migrate:down` | undo the most recent migration |
-| `npm run db:import-sqlite -- path/to/worklay.sqlite` | one-off copy of an old SQLite database into an empty Postgres database |
 
 Migrations are written in plain SQL. To change the schema, add a new file such as
 `db/migrations/0002_add_something.mjs` that lists its SQL statements and exports `up(db)` and

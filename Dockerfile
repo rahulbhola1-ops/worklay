@@ -4,19 +4,13 @@
 FROM node:26.13.1-bookworm-slim AS build
 WORKDIR /app
 
-# Toolchain in case better-sqlite3 has no prebuilt binary for the platform
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 make g++ \
- && rm -rf /var/lib/apt/lists/*
-
 COPY package.json package-lock.json ./
-# Use the Node headers bundled in the image so node-gyp doesn't have to download them
-RUN npm_config_nodedir=/usr/local npm ci
+RUN npm ci
 
 COPY . .
 RUN npm run build
 
-# Drop dev dependencies, keeping the compiled native module
+# Drop dev dependencies
 RUN npm prune --omit=dev
 
 # ---- Runtime stage ----
@@ -32,10 +26,9 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/server.mjs /app/payments.mjs ./
 COPY --from=build /app/db ./db
 
-RUN mkdir -p /data && chown -R node:node /data /app
+RUN chown -R node:node /app
 USER node
 
-VOLUME ["/data"]
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
