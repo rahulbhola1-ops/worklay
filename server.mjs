@@ -8,6 +8,7 @@ import { cleanWeekly, generateSlots, durationOptions, priceFor, localNow, isDate
 import { migrateToLatest } from './db/migrate.mjs';
 import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
+import { createMailer } from './mail.mjs';
 import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,8 @@ const MIN_PAYOUT = 20;
 // Profile photos in Cloudflare R2; uploads are switched off without R2 keys.
 const storage = createStorage();
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
+// Welcome emails through Brevo; switched off (logged only) without BREVO_API_KEY.
+const mailer = createMailer();
 const netOf = amount => Math.round(Number(amount) * (1 - PLATFORM_FEE) * 100) / 100;
 
 payments.registerRoutes(app, { me }); // before express.json: the Stripe webhook needs the raw body
@@ -253,6 +256,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
           .values({ name: String(claims.name || email.split('@')[0]).slice(0, 60), email, pw_hash: '', google_id: googleId, is_freelancer: saved.intent === 'work' })
           .returning('id').executeTakeFirstOrThrow();
         created = true;
+        mailer.sendWelcome({ email, name: String(claims.name || ''), isFreelancer: saved.intent === 'work' }, publicOrigin(req));
       }
     }
     await login(res, u.id);
@@ -355,6 +359,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
             is_freelancer: work, category: work ? category : '',
           }).returning('id').executeTakeFirstOrThrow();
           await login(res, u.id);
+          mailer.sendWelcome({ email: String(data.email).toLowerCase(), name: String(data.name || ''), isFreelancer: work }, publicOrigin(req));
           return res.json({ ok: true, id: sid(u.id) });
         } catch (e) {
           if (isUniqueViolation(e)) return bad(res, 'An account already exists with that email.');
