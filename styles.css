@@ -453,3 +453,18 @@ input.switch[type=checkbox]:focus-visible{outline:3px solid rgba(56,88,255,.4);o
 img.avatar{display:block;padding:0}
 .photo-card{display:flex;align-items:center;gap:22px;margin-bottom:20px;flex-wrap:wrap}
 .photo-card label.btn{cursor:pointer;margin-right:6px}
+
+/* ---------- Freelancer details: checkbox chips, tutor-only fields ---------- */
+.chks{display:flex;flex-wrap:wrap;gap:8px}
+.chk{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border:1.5px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-size:.88rem;font-weight:500;color:var(--ink-2);margin:0;transition:.15s;user-select:none}
+.chk input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.chk small{color:var(--muted);font-weight:400}
+.chk:hover{border-color:#c9d0f5}
+.chk:has(input:checked){border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.chk:has(input:focus-visible){outline:3px solid rgba(56,88,255,.35);outline-offset:2px}
+/* Only freelancers fill in freelancer details; tutoring fields only for the Tutoring category */
+#signup-form:has(input[name="intent"][value="hire"]:checked) .fl-only{display:none}
+.tutor-only{display:none}
+form:has(select[name="category"] option[value="tutoring"]:checked) .tutor-only{display:block}
+#settings-form:not(:has(input[name="isFreelancer"]:checked)) .fl-settings{display:none}
+.detail-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
