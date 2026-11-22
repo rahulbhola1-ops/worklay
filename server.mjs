@@ -3,7 +3,8 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
-import { createDb, sql, changed, isUniqueViolation } from './db/index.mjs';
+import { createDb, sql, changed, isUniqueViolation, isExclusionViolation } from './db/index.mjs';
+import { cleanWeekly, generateSlots, durationOptions, priceFor, localNow, isDate, toMinutes, toTime, daysBetween } from './scheduling.mjs';
 import { migrateToLatest } from './db/migrate.mjs';
 import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
@@ -47,30 +48,106 @@ const json = v => JSON.stringify(v); // jsonb columns take JSON text
 const skillList = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
 
-/* Freelancer details: speciality, availability, areas covered and (for tutors) subjects/classes. */
-const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-const TIMES = ['morning', 'afternoon', 'evening'];
+/* ---------- Categories (wl_categories / wl_subcategories) ---------- */
+let categoryCache = { at: 0, list: [] };
+async function categories() {
+  if (Date.now() - categoryCache.at < 60_000) return categoryCache.list;
+  const [cats, subs] = await Promise.all([
+    db.selectFrom('wl_categories').selectAll().orderBy('sort_order').execute(),
+    db.selectFrom('wl_subcategories').selectAll().orderBy('sort_order').execute(),
+  ]);
+  categoryCache = { at: Date.now(), list: cats.map(c => ({
+    id: c.id, name: c.name, nameEt: c.name_et, icon: c.icon, color: c.color, serviceType: c.service_type,
+    requiresVerification: c.requires_verification, requiredDocuments: list(c.required_documents), perks: list(c.perks),
+    subcategories: subs.filter(x => x.category_id === c.id).map(x => ({ id: x.id, name: x.name, nameEt: x.name_et })),
+  })) };
+  return categoryCache.list;
+}
+const categoryById = async id => (await categories()).find(c => c.id === id) || null;
+// Documents needed to be verified: the category's, or a government ID for the optional badge.
+const requiredDocsFor = cat => (cat?.requiredDocuments?.length ? cat.requiredDocuments : ['GOVERNMENT_ID']);
+
+/* ---------- Freelancer profile (onboarding) ---------- */
+const PRICING_TYPES = ['HOURLY', 'FIXED_PACKAGE', 'PER_EVENT'];
+const SLOT_MINUTES = [30, 45, 60, 90, 120, 180, 240, 300, 360, 480];
+const DOC_TYPES = ['GOVERNMENT_ID', 'DRIVERS_LICENSE', 'BACKGROUND_CHECK'];
+const DOC_LABELS = { GOVERNMENT_ID: 'government ID', DRIVERS_LICENSE: 'driver’s licence', BACKGROUND_CHECK: 'background check' };
 // Unique, trimmed, non-empty strings, capped in count and length.
 const cleanList = (v, max, len = 40) => [...new Set((Array.isArray(v) ? v : []).map(x => String(x ?? '').trim().slice(0, len)).filter(Boolean))].slice(0, max);
-function freelancerDetails(data, city, category) {
-  const tutoring = category === 'tutoring';
+const clampInt = (v, lo, hi, dflt) => { const n = Math.round(Number(v)); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dflt; };
+
+// Columns to save from the onboarding form; `cur` is the user's current row.
+async function cleanProfile(data, cur) {
+  const cat = await categoryById(String(data.category ?? cur.category ?? ''));
+  const city = CITIES[data.city] ? String(data.city) : '', area = (CITIES[city] || []).includes(data.area) ? String(data.area) : '';
+  const subIds = new Set((cat?.subcategories || []).map(x => x.id));
+  const tutoring = cat?.id === 'tutoring';
   return {
-    specialty: String(data.specialty || '').trim().slice(0, 80),
-    availability: json({ days: DAYS.filter(d => cleanList(data.days, 7).includes(d)), times: TIMES.filter(t => cleanList(data.times, 3).includes(t)) }),
+    category: cat ? cat.id : '',
+    subcategories: json(cleanList(data.subcategories, 10).filter(x => subIds.has(x))),
+    title: String(data.title ?? '').trim().slice(0, 60),
+    specialty: String(data.specialty ?? '').trim().slice(0, 80),
+    city, area,
     service_areas: json(cleanList(data.serviceAreas, 40).filter(a => (CITIES[city] || []).includes(a))),
+    travel_radius_km: clampInt(data.travelRadiusKm, 0, 300, 15),
     tutor_subjects: json(tutoring ? cleanList(data.tutorSubjects, 30) : []),
     tutor_levels: json(tutoring ? cleanList(data.tutorLevels, 12) : []),
+    pricing_type: PRICING_TYPES.includes(data.pricingType) ? data.pricingType : 'HOURLY',
+    price_amount: Math.min(100000, Math.max(0, Math.round((Number(data.priceAmount) || 0) * 100) / 100)),
+    price_unit_label: String(data.priceUnitLabel ?? '').trim().slice(0, 40) || null,
+    service_perks: json(cleanList(data.servicePerks, 12, 60)),
+    weekly_availability: json(cleanWeekly(data.weeklyAvailability)),
+    slot_duration_minutes: SLOT_MINUTES.includes(Number(data.slotDurationMinutes)) ? Number(data.slotDurationMinutes) : 60,
+    available_for_urgent: !!data.availableForUrgent,
   };
 }
-// What a freelancer must fill in at sign-up.
-function missingFreelancerDetails(data, category) {
-  if (!String(data.specialty || '').trim()) return 'Please tell customers your speciality.';
-  if (!cleanList(data.days, 7).some(d => DAYS.includes(d))) return 'Please choose the days you are available.';
-  if (!cleanList(data.times, 3).some(t => TIMES.includes(t))) return 'Please choose the times of day you are available.';
-  if (category === 'tutoring' && !cleanList(data.tutorSubjects, 30).length) return 'Please choose at least one subject you teach.';
-  if (category === 'tutoring' && !cleanList(data.tutorLevels, 12).length) return 'Please choose at least one class or level you teach.';
+
+// The newest document of each type for a user.
+async function latestDocuments(userId, ex = db) {
+  const docs = await ex.selectFrom('wl_verification_documents').select(['id', 'document_type', 'status', 'reason', 'uploaded_at'])
+    .where('user_id', '=', userId).orderBy('uploaded_at', 'desc').orderBy('id', 'desc').execute();
+  const latest = {};
+  for (const d of docs) if (!latest[d.document_type]) latest[d.document_type] = d;
+  return latest;
+}
+
+// What still stops a freelancer from finishing onboarding.
+async function onboardingProblem(p, userId) {
+  const cat = await categoryById(p.category);
+  if (!cat) return 'Please choose a category.';
+  if (!p.specialty) return 'Please tell customers your speciality.';
+  if (cat.serviceType !== 'REMOTE' && (!p.city || !p.area)) return 'Please choose your city and area.';
+  if (cat.id === 'tutoring' && !JSON.parse(p.tutor_subjects).length) return 'Please choose at least one subject you teach.';
+  if (cat.id === 'tutoring' && !JSON.parse(p.tutor_levels).length) return 'Please choose at least one class or level you teach.';
+  if (!(p.price_amount > 0)) return 'Please set your price.';
+  if (!Object.keys(JSON.parse(p.weekly_availability)).length) return 'Please set the days and hours you are available.';
+  if (cat.requiresVerification) {
+    const latest = await latestDocuments(userId);
+    const missing = cat.requiredDocuments.find(t => !latest[t] || latest[t].status === 'REJECTED');
+    if (missing) return `Please upload your ${DOC_LABELS[missing]} for verification.`;
+  }
   return null;
 }
+
+// Work out a user's verification status from their newest documents and their category.
+async function recomputeVerification(userId, ex = db) {
+  const u = await ex.selectFrom('wl_users').select('category').where('id', '=', userId).executeTakeFirst();
+  const latest = await latestDocuments(userId, ex);
+  const need = requiredDocsFor(await categoryById(u?.category)).map(t => latest[t]);
+  const rejected = need.find(d => d && d.status === 'REJECTED');
+  const status = need.every(d => d && d.status === 'APPROVED') ? 'verified' : rejected ? 'rejected' : need.some(d => d && d.status === 'PENDING') ? 'pending' : 'none';
+  await ex.updateTable('wl_users').set({ ver_status: status, ver_reason: rejected ? rejected.reason : null }).where('id', '=', userId).execute();
+  return status;
+}
+
+/* ---------- Bookings ---------- */
+const ACTIVE_BOOKING = ['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'];
+const bookable = f => !!(f && f.is_freelancer && f.onboarding_completed_at);
+const busyFor = (freelancerId, date, ex = db) => ex.selectFrom('wl_bookings').select(['start_time as start', 'end_time as end'])
+  .where('freelancer_id', '=', freelancerId).where('booking_date', '=', date).where('status', 'in', ACTIVE_BOOKING).execute();
+// Minutes from now (Estonian time) until a booking starts; negative once it has started.
+const minutesUntil = b => { const n = localNow(); return daysBetween(n.date, b.booking_date) * 1440 + toMinutes(b.start_time) - n.minutes; };
+const getBooking = id => db.selectFrom('wl_bookings').selectAll().where('id', '=', Number(id) || 0).executeTakeFirst();
 
 function parseCookies(req) {
   const out = {};
@@ -179,7 +256,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       }
     }
     await login(res, u.id);
-    return res.redirect(created ? '/#/dashboard/settings?welcome=google' : '/#/?signed_in=google');
+    return res.redirect(created ? (saved.intent === 'work' ? '/#/onboarding?welcome=google' : '/#/dashboard/settings?welcome=google') : '/#/?signed_in=google');
   } catch (error) {
     console.error(error);
     return fail('google_failed');
@@ -241,12 +318,27 @@ app.all('/api', upload.single('doc'), async (req, res) => {
     const requireAdmin = () => { if (!user || user.role !== 'admin') { bad(res, 'Admins only.', 403); return null; } return user; };
 
     if (req.method === 'GET' && route === 'bootstrap') return res.json(await bootstrap(user));
-    if (req.method === 'GET' && route === 'admin/doc') {
+    if (req.method === 'GET' && route === 'admin/verification-file') {
       if (!requireAdmin()) return;
-      const doc = await db.selectFrom('wl_documents').selectAll().where('user_id', '=', Number(req.query.id) || 0).executeTakeFirst();
-      if (!doc) return bad(res, 'Document not found.', 404);
+      const doc = await db.selectFrom('wl_verification_documents').select(['mime', 'data', 'file_name']).where('id', '=', Number(req.query.id) || 0).executeTakeFirst();
+      if (!doc || !doc.data) return bad(res, 'This file is no longer stored (documents are deleted once reviewed).', 404);
       res.setHeader('Content-Type', doc.mime);
+      res.setHeader('Content-Disposition', `inline; filename="${String(doc.file_name).replace(/[^\w.-]/g, '_') || 'document'}"`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(doc.data);
+    }
+    // Bookable start times for one freelancer on one date.
+    if (req.method === 'GET' && route === 'slots') {
+      if (payments.enabled) await payments.cleanupAbandoned();
+      const f = await db.selectFrom('wl_users').selectAll().where('id', '=', Number(req.query.freelancer) || 0).executeTakeFirst();
+      if (!bookable(f)) return bad(res, 'This freelancer is not taking bookings.', 404);
+      const options = durationOptions(f.pricing_type, f.slot_duration_minutes);
+      const duration = options.includes(Number(req.query.duration)) ? Number(req.query.duration) : options[0];
+      const date = String(req.query.date || '');
+      const r = generateSlots({ weekly: f.weekly_availability, slotMinutes: f.slot_duration_minutes, durationMinutes: duration, date,
+        busy: isDate(date) ? await busyFor(f.id, date) : [], urgent: f.available_for_urgent });
+      return res.json({ ok: true, date, duration, durationOptions: options, slots: r.slots, reason: r.reason, price: priceFor(f.pricing_type, f.price_amount, duration) });
     }
     if (req.method !== 'POST') return bad(res, 'Not found.', 404);
 
@@ -254,14 +346,13 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'auth/register': {
         if (!data.email || !data.password) return bad(res, 'Email and password are required.');
         if (String(data.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
-        const work = data.intent === 'work', category = String(data.category || ''), city = String(data.city || '');
-        if (work) { const missing = missingFreelancerDetails(data, category); if (missing) return bad(res, missing); }
+        // Freelancers fill in their service profile on the onboarding page right after signing up.
+        const work = data.intent === 'work', category = (await categoryById(String(data.category || ''))) ? String(data.category) : '';
         try {
           const u = await db.insertInto('wl_users').values({
             name: String(data.name || ''), email: String(data.email).toLowerCase(), pw_hash: passwordHash(String(data.password)),
-            title: String(data.title || ''), city, area: String(data.area || ''),
-            is_freelancer: work, category,
-            ...(work ? freelancerDetails(data, city, category) : {}),
+            title: String(data.title || ''), city: String(data.city || ''), area: String(data.area || ''),
+            is_freelancer: work, category: work ? category : '',
           }).returning('id').executeTakeFirstOrThrow();
           await login(res, u.id);
           return res.json({ ok: true, id: sid(u.id) });
@@ -285,11 +376,11 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'profile/update': {
         const u = requireLogin(); if (!u) return;
         try {
+          const city = String(data.city || '');
           await db.updateTable('wl_users').set({
             name: String(data.name || u.name), email: String(data.email || u.email).toLowerCase(), title: String(data.title || ''),
-            city: String(data.city || ''), area: String(data.area || ''), is_freelancer: !!data.isFreelancer, category: String(data.category || ''),
-            rate: Number(data.rate || 0), bio: String(data.bio || ''), skills: json(skillList(data.skills)),
-            ...freelancerDetails(data, String(data.city || ''), String(data.category || '')),
+            city, area: String(data.area || ''), is_freelancer: !!data.isFreelancer, bio: String(data.bio || ''), skills: json(skillList(data.skills)),
+            service_areas: json(list(u.service_areas).filter(a => (CITIES[city] || []).includes(a))), // areas only make sense within the city
           }).where('id', '=', u.id).execute();
         } catch (e) {
           if (isUniqueViolation(e)) return bad(res, 'Another account already uses that email.');
@@ -428,24 +519,124 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'contact/send':
         await db.insertInto('wl_contacts').values({ name: String(data.name || ''), email: String(data.email || ''), message: String(data.message || '') }).execute();
         return res.json({ ok: true });
-      case 'verification/submit': {
+      case 'onboarding/save': {
         const u = requireLogin(); if (!u) return;
-        if (!req.file) return bad(res, 'Please choose a file.');
-        await db.transaction().execute(async trx => {
-          await trx.insertInto('wl_documents').values({ user_id: u.id, mime: req.file.mimetype, data: req.file.buffer })
-            .onConflict(oc => oc.column('user_id').doUpdateSet(eb => ({ mime: eb.ref('excluded.mime'), data: eb.ref('excluded.data') }))).execute();
-          await trx.updateTable('wl_users').set({ ver_status: 'pending', ver_doc_type: String(data.docType || 'ID card'), ver_file: 'stored', ver_file_name: req.file.originalname, ver_submitted: sql`now()` })
-            .where('id', '=', u.id).execute();
-        });
+        const p = await cleanProfile(data, u);
+        if (data.complete) { const problem = await onboardingProblem(p, u.id); if (problem) return bad(res, problem); }
+        await db.updateTable('wl_users').set({ ...p, ...(data.complete ? { is_freelancer: true, onboarding_completed_at: sql`coalesce(onboarding_completed_at, now())` } : {}) })
+          .where('id', '=', u.id).execute();
+        if (p.category !== u.category) await recomputeVerification(u.id); // the documents needed depend on the category
         return res.json({ ok: true });
       }
-      case 'admin/verify': {
-        if (!requireAdmin()) return;
-        const target = Number(data.id) || 0;
-        await db.transaction().execute(async trx => {
-          await trx.updateTable('wl_users').set({ ver_status: data.ok ? 'verified' : 'rejected', ver_reason: String(data.reason || ''), ver_file: null }).where('id', '=', target).execute();
-          await trx.deleteFrom('wl_documents').where('user_id', '=', target).execute();
+      case 'verification/document': {
+        const u = requireLogin(); if (!u) return;
+        const type = String(data.documentType || '');
+        if (!DOC_TYPES.includes(type)) return bad(res, 'Please choose the document type.');
+        if (!req.file) return bad(res, 'Please choose a file.');
+        const kind = detectImage(req.file.buffer) || (req.file.buffer.subarray(0, 5).toString('latin1') === '%PDF-' ? { type: 'application/pdf' } : null);
+        if (!kind) return bad(res, 'Please upload a photo (JPG, PNG, WebP) or a PDF.');
+        await db.insertInto('wl_verification_documents').values({ user_id: u.id, document_type: type, file_name: String(req.file.originalname || '').slice(0, 120), mime: kind.type, data: req.file.buffer }).execute();
+        await recomputeVerification(u.id);
+        return res.json({ ok: true });
+      }
+      case 'admin/verification-review': {
+        const admin = requireAdmin(); if (!admin) return;
+        const doc = await db.selectFrom('wl_verification_documents').select(['id', 'user_id', 'document_type', 'status']).where('id', '=', Number(data.id) || 0).executeTakeFirst();
+        if (!doc) return bad(res, 'Document not found.', 404);
+        if (doc.status !== 'PENDING') return bad(res, 'This document has already been reviewed.');
+        const status = await db.transaction().execute(async trx => {
+          // The file is deleted once reviewed; the record of the check stays.
+          await trx.updateTable('wl_verification_documents').set({ status: data.ok ? 'APPROVED' : 'REJECTED', reason: data.ok ? null : String(data.reason || '').slice(0, 300), data: null, reviewed_at: sql`now()`, reviewed_by: admin.id })
+            .where('id', '=', doc.id).execute();
+          return recomputeVerification(doc.user_id, trx);
         });
+        await notify(doc.user_id, 'system', data.ok
+          ? (status === 'verified' ? 'Your documents were approved. You are now verified ✓' : `Your ${DOC_LABELS[doc.document_type]} was approved.`)
+          : `Your ${DOC_LABELS[doc.document_type]} was not approved${data.reason ? ': ' + String(data.reason).slice(0, 300) : ''}. Please upload it again.`, '#/dashboard/verification');
+        return res.json({ ok: true, status });
+      }
+      case 'booking/create': {
+        const u = requireLogin(); if (!u) return;
+        const f = await db.selectFrom('wl_users').selectAll().where('id', '=', Number(data.freelancerId) || 0).executeTakeFirst();
+        if (!bookable(f)) return bad(res, 'This freelancer is not taking bookings.');
+        if (f.id === u.id) return bad(res, 'You can’t book yourself.');
+        const cat = await categoryById(f.category);
+        if (cat?.requiresVerification && f.ver_status !== 'verified') return bad(res, 'This freelancer can take bookings once Worklay has verified their documents.');
+        const duration = Number(data.duration), date = String(data.date || ''), start = String(data.start || '');
+        if (!durationOptions(f.pricing_type, f.slot_duration_minutes).includes(duration)) return bad(res, 'Please choose a valid duration.');
+        const address = String(data.address || '').trim().slice(0, 200), notes = String(data.notes || '').trim().slice(0, 1000) || null;
+        if (cat?.serviceType !== 'REMOTE' && address.length < 5) return bad(res, 'Please enter the address where the work will happen.');
+        const price = priceFor(f.pricing_type, f.price_amount, duration);
+        if (!(price > 0)) return bad(res, 'This freelancer hasn’t set a price yet.');
+        let bookingId = null;
+        try {
+          bookingId = await db.transaction().execute(async trx => {
+            // One booking at a time per freelancer; the exclusion constraint is the final safety net.
+            await trx.selectFrom('wl_users').select('id').where('id', '=', f.id).forUpdate().execute();
+            const r = generateSlots({ weekly: f.weekly_availability, slotMinutes: f.slot_duration_minutes, durationMinutes: duration, date, busy: isDate(date) ? await busyFor(f.id, date, trx) : [], urgent: f.available_for_urgent });
+            if (!r.slots.some(x => x.start === start)) return null;
+            const b = await trx.insertInto('wl_bookings').values({
+              client_id: u.id, freelancer_id: f.id, service_category_id: cat?.id ?? null, booking_date: date, start_time: start,
+              end_time: toTime(toMinutes(start) + duration), duration_minutes: duration, total_price: price, address: address || 'Online', notes,
+              status: payments.enabled ? 'AWAITING_PAYMENT' : 'PENDING',
+            }).returning('id').executeTakeFirstOrThrow();
+            return b.id;
+          });
+        } catch (e) { if (!isExclusionViolation(e)) throw e; }
+        if (!bookingId) return bad(res, 'Sorry, that time is no longer available. Please pick another time.', 409);
+        if (payments.enabled) {
+          try {
+            const { url } = await payments.startCheckout(req, { kind: 'booking', buyer: u, sellerId: f.id, amount: price, title: `Booking with ${f.name}: ${date} ${start}`, bookingId });
+            return res.json({ ok: true, id: sid(bookingId), checkoutUrl: url });
+          } catch (e) {
+            await db.updateTable('wl_bookings').set({ status: 'CANCELLED', updated_at: sql`now()` }).where('id', '=', bookingId).execute();
+            throw e;
+          }
+        }
+        await notify(f.id, 'booking', `${u.name} requested a booking on ${date} at ${start}. Please confirm it.`, '#/dashboard/bookings');
+        return res.json({ ok: true, id: sid(bookingId) });
+      }
+      case 'booking/respond': {
+        const u = requireLogin(); if (!u) return;
+        const b = await getBooking(data.id);
+        if (!b || b.freelancer_id !== u.id) return bad(res, 'Booking not found.', 404);
+        const accept = !!data.accept;
+        const r = await db.updateTable('wl_bookings').set(accept ? { status: 'CONFIRMED', updated_at: sql`now()` } : { status: 'CANCELLED', cancelled_by: u.id, cancel_reason: String(data.reason || 'Declined by the freelancer').slice(0, 300), updated_at: sql`now()` })
+          .where('id', '=', b.id).where('status', '=', 'PENDING').executeTakeFirst();
+        if (!changed(r)) return bad(res, 'This booking can’t be changed any more.');
+        if (!accept) await payments.refundBooking(b.id, 'The freelancer declined the booking');
+        await notify(b.client_id, 'booking', accept ? `Your booking on ${b.booking_date} at ${b.start_time} was confirmed ✓` : `Your booking on ${b.booking_date} at ${b.start_time} was declined${payments.enabled ? ' and refunded' : ''}.`, '#/dashboard/bookings');
+        return res.json({ ok: true });
+      }
+      case 'booking/cancel': {
+        const u = requireLogin(); if (!u) return;
+        const b = await getBooking(data.id);
+        const isClient = b && b.client_id === u.id, isFreelancer = b && b.freelancer_id === u.id;
+        if (!isClient && !isFreelancer) return bad(res, 'Booking not found.', 404);
+        if (!ACTIVE_BOOKING.includes(b.status)) return bad(res, 'This booking can’t be cancelled any more.');
+        if (b.status === 'AWAITING_PAYMENT' && !isClient) return bad(res, 'This booking can’t be cancelled any more.');
+        if (isClient && b.status === 'CONFIRMED' && minutesUntil(b) < 24 * 60) return bad(res, 'Confirmed bookings can be cancelled up to 24 hours before the start. Please message the freelancer.');
+        if (b.status === 'AWAITING_PAYMENT') {
+          const p = await db.selectFrom('wl_payments').selectAll().where('kind', '=', 'booking').where('booking_id', '=', b.id).where('status', 'in', ['pending', 'processing']).executeTakeFirst();
+          if (p) await payments.cancelPayment(p);
+        }
+        const r = await db.updateTable('wl_bookings').set({ status: 'CANCELLED', cancelled_by: u.id, cancel_reason: String(data.reason || '').slice(0, 300) || null, updated_at: sql`now()` })
+          .where('id', '=', b.id).where('status', 'in', ACTIVE_BOOKING).executeTakeFirst();
+        if (!changed(r)) return bad(res, 'This booking can’t be cancelled any more.');
+        const refunded = await payments.refundBooking(b.id, `Booking cancelled by the ${isClient ? 'client' : 'freelancer'}`);
+        if (b.status !== 'AWAITING_PAYMENT') await notify(isClient ? b.freelancer_id : b.client_id, 'booking', `The booking on ${b.booking_date} at ${b.start_time} was cancelled by ${u.name}${refunded ? '; the payment was refunded' : ''}.`, '#/dashboard/bookings');
+        return res.json({ ok: true, refunded });
+      }
+      case 'booking/complete': {
+        const u = requireLogin(); if (!u) return;
+        const b = await getBooking(data.id);
+        if (!b || b.client_id !== u.id) return bad(res, 'Booking not found.', 404);
+        if (b.status !== 'CONFIRMED') return bad(res, 'Only confirmed bookings can be marked as completed.');
+        if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as completed once it has started.');
+        if (!changed(await db.updateTable('wl_bookings').set({ status: 'COMPLETED', updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').executeTakeFirst())) return res.json({ ok: true });
+        // Stripe: release the held payment. Manual mode: credit the freelancer's balance.
+        if (!(await payments.release({ bookingId: b.id }))) await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(b.total_price)}` }).where('id', '=', b.freelancer_id).execute();
+        await notify(b.freelancer_id, 'payment', `The client marked the booking on ${b.booking_date} as completed and released the payment.`, '#/dashboard/earnings');
         return res.json({ ok: true });
       }
       case 'admin/payout-paid': {
@@ -470,7 +661,7 @@ async function bootstrap(user) {
   if (payments.enabled) await payments.cleanupAbandoned();
   const none = Promise.resolve([]);
 
-  const [users, orderStats, projectStats, services, projects, proposals, orders, reviews, messages, notifications, wishlist, follows, payouts, posts, paymentList, payoutSummary] = await Promise.all([
+  const [users, orderStats, projectStats, services, projects, proposals, orders, reviews, messages, notifications, wishlist, follows, payouts, posts, paymentList, payoutSummary, bookings, myDocuments, pendingDocuments, categoryList] = await Promise.all([
     db.selectFrom('wl_users').selectAll().orderBy('id').execute(),
     db.selectFrom('wl_orders').select(['seller_id', sql`count(*) filter (where status in ('in_queue', 'delivered'))`.as('in_queue'), sql`count(*) filter (where status = 'completed')`.as('done')]).groupBy('seller_id').execute(),
     db.selectFrom('wl_projects').select(['awarded_to', sql`count(*)`.as('done')]).where('status', '=', 'completed').where('awarded_to', 'is not', null).groupBy('awarded_to').execute(),
@@ -495,6 +686,14 @@ async function bootstrap(user) {
     db.selectFrom('wl_posts').selectAll().orderBy('id', 'desc').execute(),
     payments.enabled && mid ? payments.listFor(mid, admin) : none,
     payments.enabled && user ? payments.summary(user) : Promise.resolve(null),
+    // Freelancers don't see a booking until it's paid.
+    mid ? db.selectFrom('wl_bookings').selectAll()
+      .where(eb => eb.or([eb('client_id', '=', mid), eb.and([eb('freelancer_id', '=', mid), eb('status', '<>', 'AWAITING_PAYMENT')])]))
+      .orderBy('booking_date', 'desc').orderBy('start_time', 'desc').execute() : none,
+    mid ? db.selectFrom('wl_verification_documents').select(['id', 'document_type', 'status', 'reason', 'uploaded_at']).where('user_id', '=', mid).orderBy('uploaded_at', 'desc').execute() : none,
+    admin ? db.selectFrom('wl_verification_documents').select(['id', 'user_id', 'document_type', 'file_name', 'mime', 'uploaded_at', sql`data is not null`.as('has_file')])
+      .where('status', '=', 'PENDING').orderBy('uploaded_at').execute() : none,
+    categories(),
   ]);
 
   const oStats = new Map(orderStats.map(r => [r.seller_id, r]));
@@ -506,9 +705,12 @@ async function bootstrap(user) {
       const out = {
         id: sid(u.id), name: u.name, title: u.title, country: u.country, city: u.city, area: u.area,
         bio: u.bio || '', skills: list(u.skills), isFreelancer: u.is_freelancer,
-        category: u.category, rate: u.rate, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
-        specialty: u.specialty, availability: { days: list(u.availability?.days), times: list(u.availability?.times) },
-        serviceAreas: list(u.service_areas), tutorSubjects: list(u.tutor_subjects), tutorLevels: list(u.tutor_levels),
+        category: u.category, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
+        specialty: u.specialty, subcategories: list(u.subcategories), serviceAreas: list(u.service_areas), travelRadiusKm: u.travel_radius_km,
+        tutorSubjects: list(u.tutor_subjects), tutorLevels: list(u.tutor_levels),
+        pricingType: u.pricing_type, priceAmount: u.price_amount, priceUnitLabel: u.price_unit_label, servicePerks: list(u.service_perks),
+        weeklyAvailability: u.weekly_availability || {}, slotDurationMinutes: u.slot_duration_minutes, availableForUrgent: u.available_for_urgent,
+        onboarded: !!u.onboarding_completed_at,
         verification: { status: u.ver_status },
         stats: { inQueue: oStats.get(u.id)?.in_queue || 0, doneServices: oStats.get(u.id)?.done || 0, doneProjects: pStats.get(u.id) || 0 },
         balance: self ? u.balance : 0,
@@ -516,7 +718,7 @@ async function bootstrap(user) {
       if (self && payoutSummary) out.payouts = payoutSummary;
       if (self || admin) {
         out.email = u.email;
-        out.verification = { status: u.ver_status, docType: u.ver_doc_type, fileName: u.ver_file_name, submitted: u.ver_submitted ? iso(u.ver_submitted) : null, reason: u.ver_reason, hasDoc: !!u.ver_file };
+        out.verification = { status: u.ver_status, reason: u.ver_reason };
       }
       return out;
     }),
@@ -537,7 +739,14 @@ async function bootstrap(user) {
     payouts: payouts.map(p => ({ id: sid(p.id), userId: sid(p.user_id), amount: p.amount, method: p.method, details: p.details, status: p.status, created: iso(p.created_at) })),
     posts: posts.map(p => ({ id: sid(p.id), title: p.title, emoji: p.emoji, color: p.color, excerpt: p.excerpt, body: p.body, created: iso(p.created_at) })),
     payments: paymentList,
-    config: { cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
+    bookings: bookings.map(b => ({
+      id: sid(b.id), clientId: sid(b.client_id), freelancerId: sid(b.freelancer_id), categoryId: b.service_category_id,
+      date: b.booking_date, start: b.start_time, end: b.end_time, duration: b.duration_minutes, totalPrice: b.total_price,
+      address: b.address, notes: b.notes, status: b.status, cancelledBy: sid(b.cancelled_by), cancelReason: b.cancel_reason, created: iso(b.created_at),
+    })),
+    myDocuments: myDocuments.map(d => ({ id: sid(d.id), type: d.document_type, status: d.status, reason: d.reason, uploaded: iso(d.uploaded_at) })),
+    pendingDocuments: pendingDocuments.map(d => ({ id: sid(d.id), userId: sid(d.user_id), type: d.document_type, fileName: d.file_name, mime: d.mime, uploaded: iso(d.uploaded_at), hasFile: d.has_file })),
+    config: { categories: categoryList, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
   };
 }
 
