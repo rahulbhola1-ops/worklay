@@ -103,6 +103,19 @@ The bucket can stay private: the app serves photos at `/api/files/...` with long
 If you connect a custom domain to the bucket (bucket → Settings → Custom Domains), set
 `R2_PUBLIC_URL` to it and photos are linked there directly instead.
 
+## Welcome email (Brevo, optional)
+
+New users get a welcome email right after they sign up (email/password or Google). Freelancers are
+pointed to their service profile, clients to "Find freelancers". Emails go through Brevo's
+transactional API ([mail.mjs](mail.mjs)):
+
+1. In Brevo, verify the sender address or domain (Senders, domains & dedicated IPs).
+2. Create an API key (SMTP & API → API keys).
+3. Set `BREVO_API_KEY` and `MAIL_FROM_EMAIL` (and optionally `MAIL_FROM_NAME`) in `.env`.
+
+Without them, emails are switched off and the server only logs what it would have sent. Sending
+never blocks or breaks sign-up; failures are logged.
+
 ## Local services: categories, onboarding and bookings
 
 **Categories** live in the database (`wl_categories`, `wl_subcategories`, seeded by migration
