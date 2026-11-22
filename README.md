@@ -153,3 +153,5 @@ money is refunded if the freelancer declines or the booking is cancelled, and re
 freelancer (minus the platform fee) when the client marks it completed. Freelancers confirm or
 decline under **Dashboard → Bookings**; confirmed bookings can be cancelled by the client up to
 24 hours before the start.
+
+<!-- Auto-deploy test: safe to remove. -->
