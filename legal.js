@@ -14,23 +14,24 @@ export const LEGAL = {
 /* Everything Worklay stores in the visitor's browser. `category` must match a consent
    category: 'necessary' is always allowed, anything else needs opt-in consent. */
 export const COOKIES = [
-  { name: 'worklay_auth', type: 'cookie', category: 'necessary', duration: { en: '30 days', et: '30 päeva' },
-    purpose: { en: 'Keeps you logged in after you sign in. HttpOnly, only sent to Worklay.', et: 'Hoiab sind pärast sisselogimist sisse logituna. HttpOnly, saadetakse ainult Worklayle.' } },
-  { name: 'worklay_oauth', type: 'cookie', category: 'necessary', duration: { en: '10 minutes', et: '10 minutit' },
-    purpose: { en: 'Only set when you sign in with Google. Protects the sign-in against forgery and is deleted when you return.', et: 'Seatakse ainult Google’iga sisselogimisel. Kaitseb sisselogimist võltsimise eest ja kustutatakse, kui naased.' } },
-  { name: 'worklay-lang', type: 'localStorage', category: 'necessary', duration: { en: 'Until you clear it', et: 'Kuni kustutad' },
-    purpose: { en: 'Remembers the language you chose.', et: 'Jätab meelde sinu valitud keele.' } },
-  { name: 'worklay-consent', type: 'localStorage', category: 'necessary', duration: { en: '6 months', et: '6 kuud' },
-    purpose: { en: 'Remembers your cookie choices so we don’t ask again on every visit.', et: 'Jätab meelde sinu küpsiste valikud, et me ei küsiks igal külastusel uuesti.' } },
+  { name: 'worklay_auth', type: 'cookie', category: 'necessary', duration: { en: '30 days', et: '30 päeva', ru: '30 дней' },
+    purpose: { en: 'Keeps you logged in after you sign in. HttpOnly, only sent to Worklay.', et: 'Hoiab sind pärast sisselogimist sisse logituna. HttpOnly, saadetakse ainult Worklayle.', ru: 'Сохраняет вход после авторизации. HttpOnly, отправляется только на Worklay.' } },
+  { name: 'worklay_oauth', type: 'cookie', category: 'necessary', duration: { en: '10 minutes', et: '10 minutit', ru: '10 минут' },
+    purpose: { en: 'Only set when you sign in with Google. Protects the sign-in against forgery and is deleted when you return.', et: 'Seatakse ainult Google’iga sisselogimisel. Kaitseb sisselogimist võltsimise eest ja kustutatakse, kui naased.', ru: 'Устанавливается только при входе через Google. Защищает вход от подделки и удаляется после возврата на сайт.' } },
+  { name: 'worklay-lang', type: 'localStorage', category: 'necessary', duration: { en: 'Until you clear it', et: 'Kuni kustutad', ru: 'Пока вы его не удалите' },
+    purpose: { en: 'Remembers the language you chose.', et: 'Jätab meelde sinu valitud keele.', ru: 'Запоминает выбранный вами язык.' } },
+  { name: 'worklay-consent', type: 'localStorage', category: 'necessary', duration: { en: '6 months', et: '6 kuud', ru: '6 месяцев' },
+    purpose: { en: 'Remembers your cookie choices so we don’t ask again on every visit.', et: 'Jätab meelde sinu küpsiste valikud, et me ei küsiks igal külastusel uuesti.', ru: 'Запоминает ваши настройки cookie, чтобы не спрашивать при каждом посещении.' } },
 ];
 
-const fmtDate = (iso, lang) => new Date(iso).toLocaleDateString(lang === 'et' ? 'et-EE' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+const fmtDate = (iso, lang) => new Date(iso).toLocaleDateString(({ et: 'et-EE', ru: 'ru-RU' })[lang] || 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 const head = (title, lead) => `<div class="page-head"><div class="container"><h1>${title}</h1><p>${lead}</p></div></div>`;
 
 export function cookieTable(lang) {
-  const L = lang === 'et'
-    ? { name: 'Nimi', type: 'Tüüp', purpose: 'Eesmärk', duration: 'Kestus' }
-    : { name: 'Name', type: 'Type', purpose: 'Purpose', duration: 'Duration' };
+  const L = {
+    et: { name: 'Nimi', type: 'Tüüp', purpose: 'Eesmärk', duration: 'Kestus' },
+    ru: { name: 'Название', type: 'Тип', purpose: 'Назначение', duration: 'Срок хранения' },
+  }[lang] || { name: 'Name', type: 'Type', purpose: 'Purpose', duration: 'Duration' };
   return `<div class="legal-table-wrap"><table class="legal-table"><thead><tr><th>${L.name}</th><th>${L.type}</th><th>${L.purpose}</th><th>${L.duration}</th></tr></thead><tbody>
     ${COOKIES.map(c => `<tr><td><code>${c.name}</code></td><td>${c.type}</td><td>${c.purpose[lang] || c.purpose.en}</td><td>${c.duration[lang] || c.duration.en}</td></tr>`).join('')}
   </tbody></table></div>`;
@@ -203,6 +204,22 @@ export function cookiesPage(lang) {
     <p>Saad oma valikuid igal ajal muuta või nõusoleku tagasi võtta. Küpsiseid saad kustutada ka brauseri seadetes; kui kustutad <code>worklay_auth</code>, logitakse sind välja.</p>
     <p><button class="btn btn-primary" data-action="cookie-settings">Muuda küpsiste seadeid</button></p>
     <p>Lisateave isikuandmete kohta on <a href="#/privacy">privaatsuspoliitikas</a>.</p>
+  </article>`;
+
+  if (lang === 'ru') return `${head('Политика cookie', `Последнее обновление: ${d}`)}
+  <article class="prose legal">
+    <p>Cookie и хранилище браузера (localStorage) — это небольшие фрагменты данных, которые сайт сохраняет на вашем устройстве. Здесь перечислено всё, что сохраняет Worklay.</p>
+    <h2>Строго необходимые</h2>
+    <p>Они нужны для входа в систему и запоминания ваших настроек. Так как без них сайт не работает, мы не спрашиваем согласия, но сообщаем о них.</p>
+    ${cookieTable('ru')}
+    <h2>Аналитика</h2>
+    <p>Сейчас мы <b>не используем</b> аналитические и рекламные cookie. Если мы начнём их использовать, мы перечислим их здесь и включим только с вашего согласия.</p>
+    <h2>Третьи стороны</h2>
+    <p>Worklay не загружает сторонние скрипты, шрифты и трекеры. Если вы выбираете вход через Google, вы переходите на страницу Google, где действуют cookie и политика конфиденциальности Google.</p>
+    <h2>Изменение настроек</h2>
+    <p>Вы можете в любое время изменить свой выбор или отозвать согласие. Cookie также можно удалить в настройках браузера; если удалить <code>worklay_auth</code>, вы выйдете из системы.</p>
+    <p><button class="btn btn-primary" data-action="cookie-settings">Изменить настройки cookie</button></p>
+    <p>Подробнее о персональных данных — в <a href="#/privacy">политике конфиденциальности</a> (на английском языке).</p>
   </article>`;
 
   return `${head('Cookie Policy', `Last updated ${d}`)}

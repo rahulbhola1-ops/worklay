@@ -100,7 +100,7 @@ const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.ar
 const proxTag = o => { const u = me(); if (!u || !u.city || u.id === o.id) return ''; const p = proximity(u, o); return p === 2 ? '<span class="tag green">📍 Your area</span>' : p === 1 ? '<span class="tag">📍 Your city</span>' : ''; };
 
 /* ---------- i18n ---------- */
-const LANGS = { en: 'English', et: 'Eesti' };
+const LANGS = { en: 'English', et: 'Eesti', ru: 'Русский' };
 const I18N = {
   en: {},
   et: {
@@ -110,7 +110,7 @@ const I18N = {
     'hero.ph': 'Mida sa vajad?', 'home.how': 'Kuidas see töötab', 'home.cats': 'Sirvi kategooriaid', 'home.popular': 'Populaarsed teenused', 'home.latest': 'Uusimad projektid',
     'footer.tag': 'Ühendame ülesanded inimestega, kes need ära teevad.', 'footer.platform': 'Platvorm', 'footer.company': 'Ettevõte',
     'common.viewall': 'Vaata kõiki', 'common.send': 'Saada', 'common.follow': 'Jälgi', 'common.following': 'Jälgid', 'common.message': 'Saada sõnum', 'common.order': 'Telli',
-    'language.label': 'Keel', 'language.select': 'Vali keel', 'language.en': 'English', 'language.et': 'Eesti',
+    'language.label': 'Keel', 'language.select': 'Vali keel', 'language.en': 'English', 'language.et': 'Eesti', 'language.ru': 'Vene',
     'hero.search': 'Otsi', 'hero.allCities': 'Kõik linnad', 'hero.searchIn': 'Otsi valdkonnas', 'hero.popular': 'Populaarne:', 'hero.hire': 'Palgata vabakutseline', 'hero.earn': 'Alusta teenimist →',
     'hero.local': 'Kohalikud spetsialistid {count} Eesti linnas', 'hero.near': 'Spetsialistid sinu lähedal', 'hero.searchArea': 'Otsi linna ja piirkonna järgi',
     'hero.verified': 'Kontrollitud vabakutselised', 'hero.idChecked': 'Meie meeskonna poolt kontrollitud', 'hero.proposals': 'Saa pakkumisi kiiresti', 'hero.postFree': 'Postita projekt tasuta',
@@ -120,12 +120,39 @@ const I18N = {
     'home.categoriesDesc': 'Leia sobiv tegija kodutöödest veebidisainini.', 'home.available': 'saadaval', 'home.first': 'Ole esimene', 'home.nearbyHead': 'Vabakutselised sinu linnas', 'home.nearbyLocation': 'Vabakutselised sinu lähedal linnas', 'home.pickCity': 'Vali linn, et näha lähedal saadaolevaid tegijaid.', 'home.firstFreelancer': 'Ole üks esimestest vabakutselistest', 'home.joinFreelancer': 'Liitu vabakutselisena', 'home.setupFreelancer': 'Seadista vabakutselise profiil', 'home.profileNearby': 'Loo tasuta profiil, vali linn ja piirkond ning leia lähedal asuvaid kliente.', 'home.readyPackages': 'Valmispaketid selgete hindadega.', 'home.noServices': 'Teenuseid veel pole', 'home.servicesDesc': 'Vabakutselised saavad pakkuda Basicu, Standardi ja Premiumi pakette enda määratud hinnaga.', 'home.jobsDesc': 'Tööd inimestelt, kes vajavad abi.', 'home.needDone': 'Vajad abi?', 'home.postProjectFree': 'Postita projekt tasuta ja saa pakkumisi lähedal asuvatelt vabakutselistelt.', 'home.earnOwn': 'Teeni enda tingimustel', 'home.offerLocal': 'Paku teenuseid enda hinnaga ja leia kliente oma piirkonnast.', 'home.browseProjects': 'Sirvi projekte',
     'chip.cleaning': 'Koristus', 'chip.furniture': 'Mööbli kokkupanek', 'chip.logo': 'Logo kujundus', 'chip.web': 'Veebiarendus', 'chip.translation': 'Tõlge',
     'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli', 'category.tutoring': 'Õpetamine ja eratunnid',
+    'category.events': 'Üritused ja fotograafia', 'category.beauty': 'Ilu ja isikuhooldus', 'category.cleaning': 'Kodu ja koristus', 'category.childcare': 'Lapsehoid ja pere', 'category.driving': 'Sõidu- ja veoteenused',
     'footer.legal': 'Õiguslik', 'legal.privacy': 'Privaatsuspoliitika', 'legal.cookies': 'Küpsiste poliitika', 'legal.cookieSettings': 'Küpsiste seaded',
     'cookie.title': 'Sinu privaatsus', 'cookie.text': 'Kasutame ainult küpsiseid, mis on vajalikud sisselogimiseks ja sinu valikute meelespidamiseks. Analüütika- ja reklaamiküpsiseid kasutame ainult sinu nõusolekul.',
     'cookie.accept': 'Nõustu kõigiga', 'cookie.reject': 'Keeldu valikulistest', 'cookie.customize': 'Kohanda', 'cookie.save': 'Salvesta valikud', 'cookie.saved': 'Küpsiste valikud salvestatud',
     'cookie.settingsIntro': 'Vali, milliseid küpsiseid lubad. Hädavajalikud küpsised on alati sees, sest sait ei tööta ilma nendeta.',
     'cookie.necessary': 'Hädavajalikud', 'cookie.necessaryDesc': 'Sisselogimine, keele-eelistus ja need küpsiste valikud.', 'cookie.alwaysOn': 'Alati sees',
     'cookie.analytics': 'Analüütika', 'cookie.analyticsDesc': 'Aitab meil mõista, kuidas saiti kasutatakse. Praegu ei kasuta me analüütikatööriistu, seega selle lubamine midagi ei muuda.',
+  },
+  ru: {
+    'nav.freelancers': 'Найти фрилансеров', 'nav.projects': 'Проекты', 'nav.services': 'Услуги', 'nav.blog': 'Блог', 'nav.about': 'О нас', 'nav.contact': 'Контакты',
+    'cta.post': 'Разместить проект', 'cta.signin': 'Войти', 'cta.login': 'Войти', 'cta.signup': 'Регистрация', 'cta.search': 'Найти',
+    'hero.title': 'Найдите работу. Решите любую задачу.', 'hero.titleHtml': 'Найдите проверенных <span class="hl">местных специалистов</span> для любой задачи',
+    'hero.lead': 'Worklay помогает людям, которым нужно что-то сделать, найти фрилансеров и специалистов, которые ищут работу.',
+    'hero.ph': 'С чем вам нужна помощь?', 'home.how': 'Как это работает', 'home.cats': 'Категории', 'home.popular': 'Популярные услуги', 'home.latest': 'Новые проекты',
+    'footer.tag': 'Связываем людей с задачами и специалистов, которые их выполнят.', 'footer.platform': 'Платформа', 'footer.company': 'Компания',
+    'common.viewall': 'Смотреть все', 'common.send': 'Отправить', 'common.follow': 'Подписаться', 'common.following': 'Вы подписаны', 'common.message': 'Написать', 'common.order': 'Заказать',
+    'language.label': 'Язык', 'language.select': 'Выберите язык', 'language.en': 'Английский', 'language.et': 'Эстонский', 'language.ru': 'Русский',
+    'hero.search': 'Поиск', 'hero.allCities': 'Все города', 'hero.searchIn': 'Искать в разделе', 'hero.popular': 'Популярное:', 'hero.hire': 'Нанять фрилансера', 'hero.earn': 'Начать зарабатывать →',
+    'hero.local': 'Местные специалисты в городах Эстонии ({count})', 'hero.near': 'Специалисты рядом с вами', 'hero.searchArea': 'Поиск по городу и району',
+    'hero.verified': 'Проверенные фрилансеры', 'hero.idChecked': 'Личность проверена нашей командой', 'hero.proposals': 'Быстро получайте предложения', 'hero.postFree': 'Разместите проект бесплатно',
+    'trust.cities': 'Городов: {cities}, районов: {areas}', 'trust.nearby': 'Помощь совсем рядом', 'trust.verified': 'Специалисты с проверенной личностью', 'trust.documents': 'Документы проверены нашей командой', 'trust.pay': 'Оплата после выполнения', 'trust.release': 'Деньги переводятся после вашего подтверждения', 'trust.free': 'Регистрация бесплатна', 'trust.post': 'Размещение проектов бесплатно',
+    'home.safe': 'Просто и безопасно', 'home.customer': '🧑‍💼 Для заказчиков', 'home.freelancer': '🛠️ Для фрилансеров',
+    'home.postFree': 'Разместите задание бесплатно', 'home.describe': 'Опишите, что нужно сделать, бюджет и место.', 'home.compare': 'Сравните предложения', 'home.compareDesc': 'Местные специалисты присылают предложения. Посмотрите их отзывы и значки и пообщайтесь в чате, прежде чем решить.', 'home.payHappy': 'Платите, когда довольны', 'home.payHappyDesc': 'Подтвердите работу, и оплата перейдёт фрилансеру.', 'home.createProfile': 'Создайте профиль', 'home.chooseLocation': 'Укажите город и район, чтобы заказчики поблизости находили вас первыми.', 'home.offerPackages': 'Предлагайте пакеты или отправляйте предложения', 'home.setPrices': 'Сами устанавливайте цены для пакетов Basic, Standard и Premium.', 'home.getPaid': 'Получайте оплату', 'home.withdraw': 'Выводите заработок через PayPal, Payoneer или банковским переводом.',
+    'home.categoriesDesc': 'От ремонта дома до веб-дизайна: найдите подходящего исполнителя.', 'home.available': 'доступно', 'home.first': 'Станьте первым', 'home.nearbyHead': 'Фрилансеры в вашем городе', 'home.nearbyLocation': 'Фрилансеры рядом с вами в городе', 'home.pickCity': 'Выберите город, чтобы увидеть, кто доступен поблизости.', 'home.firstFreelancer': 'Станьте одним из первых фрилансеров', 'home.joinFreelancer': 'Стать фрилансером', 'home.setupFreelancer': 'Настроить профиль фрилансера', 'home.profileNearby': 'Создайте бесплатный профиль, укажите город и район и получайте заказы от людей поблизости.', 'home.readyPackages': 'Готовые пакеты с понятными ценами.', 'home.noServices': 'Услуг пока нет', 'home.servicesDesc': 'Фрилансеры могут предлагать свои услуги в пакетах Basic, Standard и Premium по своей цене.', 'home.jobsDesc': 'Задания от людей, которым нужна помощь.', 'home.needDone': 'Нужно что-то сделать?', 'home.postProjectFree': 'Разместите проект бесплатно и получите предложения от фрилансеров поблизости.', 'home.earnOwn': 'Готовы зарабатывать на своих условиях?', 'home.offerLocal': 'Предлагайте услуги по своей цене, и заказчики из вашего района найдут вас.', 'home.browseProjects': 'Смотреть проекты',
+    'chip.cleaning': 'Уборка', 'chip.furniture': 'Сборка мебели', 'chip.logo': 'Дизайн логотипа', 'chip.web': 'Веб-разработка', 'chip.translation': 'Перевод',
+    'category.dev': 'Разработка и IT', 'category.design': 'Дизайн и креатив', 'category.writing': 'Тексты и переводы', 'category.marketing': 'Цифровой маркетинг', 'category.video': 'Видео и анимация', 'category.business': 'Бизнес и администрирование', 'category.home': 'Дом и ремонт', 'category.music': 'Музыка и звук', 'category.tutoring': 'Репетиторство и уроки',
+    'category.events': 'Мероприятия и фотосъёмка', 'category.beauty': 'Красота и уход', 'category.cleaning': 'Уборка дома', 'category.childcare': 'Присмотр за детьми и семья', 'category.driving': 'Перевозки и транспорт',
+    'footer.legal': 'Правовая информация', 'legal.privacy': 'Политика конфиденциальности', 'legal.cookies': 'Политика cookie', 'legal.cookieSettings': 'Настройки cookie',
+    'cookie.title': 'Ваша конфиденциальность', 'cookie.text': 'Мы используем только cookie, необходимые для входа в систему и запоминания ваших настроек. Аналитические и рекламные cookie мы будем использовать только с вашего согласия.',
+    'cookie.accept': 'Принять все', 'cookie.reject': 'Отклонить необязательные', 'cookie.customize': 'Настроить', 'cookie.save': 'Сохранить выбор', 'cookie.saved': 'Настройки cookie сохранены',
+    'cookie.settingsIntro': 'Выберите, какие cookie вы разрешаете. Строго необходимые cookie включены всегда, потому что без них сайт не работает.',
+    'cookie.necessary': 'Строго необходимые', 'cookie.necessaryDesc': 'Вход в систему, выбор языка и эти настройки cookie.', 'cookie.alwaysOn': 'Всегда включены',
+    'cookie.analytics': 'Аналитика', 'cookie.analyticsDesc': 'Помогает нам понять, как используется сайт. Мы пока не используем инструменты аналитики, поэтому сейчас включение этой опции ничего не меняет.',
   },
 };
 const EN = {
@@ -135,7 +162,7 @@ const EN = {
   'hero.ph': 'What do you need help with?', 'home.how': 'How it works', 'home.cats': 'Browse categories', 'home.popular': 'Popular services', 'home.latest': 'Latest projects',
   'footer.tag': 'Connecting people with tasks to the professionals who get them done.', 'footer.platform': 'Platform', 'footer.company': 'Company',
   'common.viewall': 'View all', 'common.send': 'Send', 'common.follow': 'Follow', 'common.following': 'Following', 'common.message': 'Message', 'common.order': 'Order',
-  'language.label': 'Language', 'language.select': 'Select language', 'language.en': 'English', 'language.et': 'Estonian',
+  'language.label': 'Language', 'language.select': 'Select language', 'language.en': 'English', 'language.et': 'Estonian', 'language.ru': 'Russian',
   'hero.search': 'Search', 'hero.allCities': 'All cities', 'hero.searchIn': 'Search in', 'hero.popular': 'Popular:', 'hero.hire': 'Hire a freelancer', 'hero.earn': 'Start earning →',
   'hero.local': 'Local professionals in {count} Estonian cities', 'hero.near': 'Professionals near you', 'hero.searchArea': 'Search by city and area',
   'hero.verified': 'Verified freelancers', 'hero.idChecked': 'ID checked by our team', 'hero.proposals': 'Get proposals fast', 'hero.postFree': 'Post a project for free',
@@ -145,6 +172,8 @@ const EN = {
   'home.categoriesDesc': 'From home repairs to web design: find the right person for the job.', 'home.available': 'available', 'home.first': 'Be the first', 'home.nearbyHead': 'Find freelancers in your city', 'home.nearbyLocation': 'Freelancers near you in', 'home.pickCity': "Pick a city to see who's available nearby.", 'home.firstFreelancer': 'Be one of the first freelancers', 'home.joinFreelancer': 'Join as a freelancer', 'home.setupFreelancer': 'Set up my freelancer profile', 'home.profileNearby': 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', 'home.readyPackages': 'Ready-made packages with clear prices.', 'home.noServices': 'No services yet', 'home.servicesDesc': 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', 'home.jobsDesc': 'Jobs posted by people who need a hand.', 'home.needDone': 'Need something done?', 'home.postProjectFree': 'Post your project for free and get proposals from freelancers near you.', 'home.earnOwn': 'Ready to earn on your own terms?', 'home.offerLocal': 'Offer your services at your own price and get found by customers in your area.', 'home.browseProjects': 'Browse projects',
   'chip.cleaning': 'Cleaning', 'chip.furniture': 'Furniture assembly', 'chip.logo': 'Logo design', 'chip.web': 'Web development', 'chip.translation': 'Translation',
   'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio', 'category.tutoring': 'Tutoring & Lessons',
+  'category.events': 'Events & Photography', 'category.beauty': 'Beauty & Personal Care', 'category.cleaning': 'Home & Cleaning', 'category.childcare': 'Childcare & Family', 'category.driving': 'Driving & Transport',
+  'hero.titleHtml': 'Find trusted <span class="hl">local professionals</span> for any job',
   'footer.legal': 'Legal', 'legal.privacy': 'Privacy Policy', 'legal.cookies': 'Cookie Policy', 'legal.cookieSettings': 'Cookie settings',
   'cookie.title': 'Your privacy', 'cookie.text': 'We only use cookies that are needed to log you in and remember your choices. We will only use analytics or advertising cookies if you agree.',
   'cookie.accept': 'Accept all', 'cookie.reject': 'Reject optional', 'cookie.customize': 'Customize', 'cookie.save': 'Save choices', 'cookie.saved': 'Cookie choices saved',
@@ -154,7 +183,7 @@ const EN = {
 };
 let lang = 'en';
 const t = k => (I18N[lang] && I18N[lang][k]) || EN[k] || k;
-const numberLocale = () => lang === 'et' ? 'et-EE' : 'en';
+const numberLocale = () => ({ et: 'et-EE', ru: 'ru-RU' })[lang] || 'en';
 
 function detectLang() {
   try { const saved = localStorage.getItem(LANG_KEY); if (saved && LANGS[saved]) return [saved, 'saved']; } catch (e) {}
@@ -166,6 +195,7 @@ function detectLang() {
 }
 
 function flagSvg(code) {
+  if (code === 'ru') return '<svg class="language-flag" viewBox="0 0 60 30" aria-hidden="true"><rect width="60" height="10" fill="#fff"/><rect y="10" width="60" height="10" fill="#0039A6"/><rect y="20" width="60" height="10" fill="#D52B1E"/></svg>';
   if (code === 'et') return '<svg class="language-flag" viewBox="0 0 60 30" aria-hidden="true"><rect width="60" height="10" fill="#4891D9"/><rect y="10" width="60" height="10" fill="#111"/><rect y="20" width="60" height="10" fill="#fff"/></svg>';
   return '<svg class="language-flag" viewBox="0 0 60 30" aria-hidden="true"><rect width="60" height="30" fill="#012169"/><path d="M0 0 60 30M60 0 0 30" stroke="#fff" stroke-width="6"/><path d="M0 0 60 30M60 0 0 30" stroke="#C8102E" stroke-width="2.5"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#C8102E" stroke-width="5"/></svg>';
 }
@@ -587,7 +617,7 @@ function stripeEarnings(u) {
 
 /* Live date and time (visitor's local time zone) shown in the home hero. */
 function clockParts(d = new Date()) {
-  const loc = lang === 'et' ? 'et-EE' : 'en-GB';
+  const loc = ({ et: 'et-EE', ru: 'ru-RU' })[lang] || 'en-GB';
   const date = d.toLocaleDateString(loc, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return { date: date.charAt(0).toUpperCase() + date.slice(1), time: d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', second: '2-digit' }), iso: d.toISOString() };
 }
@@ -619,7 +649,7 @@ V.home = () => {
   <section class="hero"><div class="container hero-inner">
     <div>
       <div class="hero-badges"><span class="pill-badge">📍 ${t('hero.local').replace('{count}', Object.keys(CITIES).length)}</span>${liveClock()}</div>
-      <h1>${lang === 'en' ? 'Find trusted <span class="hl">local professionals</span> for any job' : t('hero.title')}</h1>
+      <h1>${lang === 'en' || lang === 'ru' ? t('hero.titleHtml') : t('hero.title')}</h1>
       <p class="lead">${t('hero.lead')}</p>
       <form class="search-bar" id="hero-search"><input name="q" placeholder="${esc(t('hero.ph'))}" aria-label="${t('hero.search')}"><select name="city" aria-label="${t('hero.searchArea')}"><option value="">📍 ${t('hero.allCities')}</option>${Object.keys(CITIES).map(c => `<option ${u && u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select><select name="type" aria-label="${t('hero.searchIn')}"><option value="freelancers">${t('nav.freelancers')}</option><option value="services">${t('nav.services')}</option><option value="projects">${t('nav.projects')}</option></select><button class="btn btn-primary">${t('cta.search')}</button></form>
       <div class="chips"><span class="chips-label">${t('hero.popular')}</span>${[['Cleaning', 'chip.cleaning'], ['Furniture assembly', 'chip.furniture'], ['Logo design', 'chip.logo'], ['Web development', 'chip.web'], ['Translation', 'chip.translation']].map(([q, key]) => `<button class="chip" data-action="chip" data-q="${q}">${t(key)}</button>`).join('')}</div>
