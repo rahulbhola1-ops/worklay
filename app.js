@@ -22,8 +22,59 @@ const CATEGORIES = [
   { id: 'business', name: 'Business & Admin', ico: '💼', color: '#fff6d9' },
   { id: 'home', name: 'Home & Handyman', ico: '🛠️', color: '#e6f6ff' },
   { id: 'music', name: 'Music & Audio', ico: '🎧', color: '#eaf9f3' },
+  { id: 'tutoring', name: 'Tutoring & Lessons', ico: '📚', color: '#fdf1e1' },
 ];
 const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
+
+/* ---------- freelancer details: speciality, availability, areas covered, tutoring ---------- */
+const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+const TIMES = [['morning', 'Morning', '8–12'], ['afternoon', 'Afternoon', '12–17'], ['evening', 'Evening', '17–21']];
+const TUTOR_SUBJECTS = ['Mathematics', 'Estonian', 'English', 'Russian', 'German', 'Physics', 'Chemistry', 'Biology', 'Geography', 'History', 'Computer science', 'Music', 'Art', 'Exam preparation'];
+const TUTOR_LEVELS = ['Grades 1–4', 'Grades 5–9', 'Grades 10–12', 'University', 'Adults'];
+const splitList = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
+const chk = (name, value, label, on, extra = '') => `<label class="chk"><input type="checkbox" name="${name}" value="${esc(value)}" ${on ? 'checked' : ''}>${label}${extra}</label>`;
+const areaChecks = (city, chosen = []) => (CITIES[city] || []).map(a => chk('areas', a, esc(a), chosen.includes(a))).join('') || '<span class="small muted">Choose your city first.</span>';
+// "Weekdays · evenings", "Every day · mornings, afternoons", …
+function availText(av) {
+  if (!av || !av.days.length || !av.times.length) return '';
+  const d = av.days, has = x => d.includes(x);
+  const days = d.length === 7 ? 'Every day' : d.length === 5 && ['mon', 'tue', 'wed', 'thu', 'fri'].every(has) ? 'Weekdays'
+    : d.length === 2 && has('sat') && has('sun') ? 'Weekends' : DAYS.filter(([k]) => has(k)).map(([, l]) => l).join(', ');
+  return `${days} · ${av.times.length === 3 ? 'any time' : TIMES.filter(([k]) => av.times.includes(k)).map(([, l]) => l.toLowerCase() + 's').join(', ')}`;
+}
+// Form fields shared by sign-up and Profile settings. `u` holds the current values.
+function freelancerFields(u, city) {
+  const subjects = u.tutorSubjects || [], levels = u.tutorLevels || [], av = u.availability || { days: [], times: [] };
+  return `<div class="field"><label>Your speciality</label><input name="specialty" maxlength="80" value="${esc(u.specialty || '')}" placeholder="e.g. Bathroom plumbing, Maths exam preparation, Logo design"></div>
+    <div class="tutor-only">
+      <div class="field"><label>Subjects you teach</label><div class="chks">${TUTOR_SUBJECTS.map(x => chk('subjects', x, esc(x), subjects.includes(x))).join('')}</div>
+        <input name="subjectsOther" style="margin-top:8px" maxlength="200" value="${esc(subjects.filter(x => !TUTOR_SUBJECTS.includes(x)).join(', '))}" placeholder="Other subjects, comma separated"></div>
+      <div class="field"><label>Classes / levels</label><div class="chks">${TUTOR_LEVELS.map(x => chk('levels', x, esc(x), levels.includes(x))).join('')}</div>
+        <input name="levelsOther" style="margin-top:8px" maxlength="120" value="${esc(levels.filter(x => !TUTOR_LEVELS.includes(x)).join(', '))}" placeholder="Other classes or levels, comma separated"></div>
+    </div>
+    <div class="field"><label>When are you available?</label><div class="chks">${DAYS.map(([k, l]) => chk('days', k, l, av.days.includes(k))).join('')}</div>
+      <div class="chks" style="margin-top:8px">${TIMES.map(([k, l, h]) => chk('times', k, l, av.times.includes(k), ` <small>${h}</small>`)).join('')}</div></div>
+    <div class="field"><label>Areas you cover</label><div class="chks" data-role="cover-areas">${areaChecks(city, u.serviceAreas || [])}</div>
+      <p class="small muted" style="margin:6px 0 0">Customers searching any of these areas will find you.</p></div>`;
+}
+// Reads the fields above from a form.
+function readFreelancerFields(f) {
+  return {
+    specialty: (f.get('specialty') || '').trim(),
+    tutorSubjects: [...f.getAll('subjects'), ...splitList(f.get('subjectsOther'))],
+    tutorLevels: [...f.getAll('levels'), ...splitList(f.get('levelsOther'))],
+    days: f.getAll('days'), times: f.getAll('times'),
+    serviceAreas: [...new Set([...f.getAll('areas'), f.get('area')].filter(Boolean))], // own area always counts
+  };
+}
+function freelancerDetailsMissing(d, category) {
+  if (!d.specialty) return 'Please tell customers your speciality.';
+  if (!d.days.length) return 'Please choose the days you are available.';
+  if (!d.times.length) return 'Please choose the times of day you are available.';
+  if (category === 'tutoring' && !d.tutorSubjects.length) return 'Please choose at least one subject you teach.';
+  if (category === 'tutoring' && !d.tutorLevels.length) return 'Please choose at least one class or level you teach.';
+  return '';
+}
 const FEATURE_NAMES = ['Source File', 'Social Media Kit', 'High Resolution', 'Project Upload'];
 let PAYOUT_METHODS = ['PayPal', 'Payoneer', 'Bank transfer'];
 let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
@@ -48,7 +99,7 @@ function locationFields(city = '', area = '', { required = false, any = false } 
     <div class="field"><label>Area</label><select name="area" data-role="area" data-any="${any ? 1 : ''}" ${req} ${areas.length ? '' : 'disabled'}><option value="">${any ? 'All areas' : 'Select area'}</option>${areas.map(a => `<option ${a === area ? 'selected' : ''}>${a}</option>`).join('')}</select></div></div>`;
 }
 // Proximity: 2 = same area, 1 = same city, 0 = elsewhere
-const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.area && a.area === b.area ? 2 : 1);
+const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.area && (a.area === b.area || (b.serviceAreas || []).includes(a.area)) ? 2 : 1);
 const proxTag = o => { const u = me(); if (!u || !u.city || u.id === o.id) return ''; const p = proximity(u, o); return p === 2 ? '<span class="tag green">📍 Your area</span>' : p === 1 ? '<span class="tag">📍 Your city</span>' : ''; };
 
 /* ---------- i18n ---------- */
@@ -71,7 +122,7 @@ const I18N = {
     'home.postFree': 'Postita töö tasuta', 'home.describe': 'Kirjelda tööd, eelarvet ja asukohta.', 'home.compare': 'Võrdle pakkumisi', 'home.compareDesc': 'Kohalikud spetsialistid saadavad pakkumisi. Vaata arvustusi ja märke ning vestle enne otsustamist.', 'home.payHappy': 'Maksa, kui oled rahul', 'home.payHappyDesc': 'Kinnita töö ja tasu kantakse vabakutselisele.', 'home.createProfile': 'Loo profiil', 'home.chooseLocation': 'Vali linn ja piirkond, et lähedal asuvad kliendid sind leiaksid.', 'home.offerPackages': 'Paku teenusepakette või saada pakkumisi', 'home.setPrices': 'Määra ise Basicu, Standardi ja Premiumi paketihinnad.', 'home.getPaid': 'Saa tasu', 'home.withdraw': 'Võta teenistus välja PayPali, Payoneeri või pangaülekandega.',
     'home.categoriesDesc': 'Leia sobiv tegija kodutöödest veebidisainini.', 'home.available': 'saadaval', 'home.first': 'Ole esimene', 'home.nearbyHead': 'Vabakutselised sinu linnas', 'home.nearbyLocation': 'Vabakutselised sinu lähedal linnas', 'home.pickCity': 'Vali linn, et näha lähedal saadaolevaid tegijaid.', 'home.firstFreelancer': 'Ole üks esimestest vabakutselistest', 'home.joinFreelancer': 'Liitu vabakutselisena', 'home.setupFreelancer': 'Seadista vabakutselise profiil', 'home.profileNearby': 'Loo tasuta profiil, vali linn ja piirkond ning leia lähedal asuvaid kliente.', 'home.readyPackages': 'Valmispaketid selgete hindadega.', 'home.noServices': 'Teenuseid veel pole', 'home.servicesDesc': 'Vabakutselised saavad pakkuda Basicu, Standardi ja Premiumi pakette enda määratud hinnaga.', 'home.jobsDesc': 'Tööd inimestelt, kes vajavad abi.', 'home.needDone': 'Vajad abi?', 'home.postProjectFree': 'Postita projekt tasuta ja saa pakkumisi lähedal asuvatelt vabakutselistelt.', 'home.earnOwn': 'Teeni enda tingimustel', 'home.offerLocal': 'Paku teenuseid enda hinnaga ja leia kliente oma piirkonnast.', 'home.browseProjects': 'Sirvi projekte',
     'chip.cleaning': 'Koristus', 'chip.furniture': 'Mööbli kokkupanek', 'chip.logo': 'Logo kujundus', 'chip.web': 'Veebiarendus', 'chip.translation': 'Tõlge',
-    'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli',
+    'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli', 'category.tutoring': 'Õpetamine ja eratunnid',
     'footer.legal': 'Õiguslik', 'legal.privacy': 'Privaatsuspoliitika', 'legal.cookies': 'Küpsiste poliitika', 'legal.cookieSettings': 'Küpsiste seaded',
     'cookie.title': 'Sinu privaatsus', 'cookie.text': 'Kasutame ainult küpsiseid, mis on vajalikud sisselogimiseks ja sinu valikute meelespidamiseks. Analüütika- ja reklaamiküpsiseid kasutame ainult sinu nõusolekul.',
     'cookie.accept': 'Nõustu kõigiga', 'cookie.reject': 'Keeldu valikulistest', 'cookie.customize': 'Kohanda', 'cookie.save': 'Salvesta valikud', 'cookie.saved': 'Küpsiste valikud salvestatud',
@@ -96,7 +147,7 @@ const EN = {
   'home.postFree': 'Post your job for free', 'home.describe': 'Describe what you need, your budget and where it is.', 'home.compare': 'Compare proposals', 'home.compareDesc': 'Local professionals send offers. Check their reviews and badges, and chat before you decide.', 'home.payHappy': "Pay when you're happy", 'home.payHappyDesc': 'Approve the work and payment is released to the freelancer.', 'home.createProfile': 'Create your profile', 'home.chooseLocation': 'Choose your city and area so nearby customers find you first.', 'home.offerPackages': 'Offer packages or send proposals', 'home.setPrices': 'Set your own prices in Basic, Standard and Premium tiers.', 'home.getPaid': 'Get paid', 'home.withdraw': 'Withdraw your earnings via PayPal, Payoneer or bank transfer.',
   'home.categoriesDesc': 'From home repairs to web design: find the right person for the job.', 'home.available': 'available', 'home.first': 'Be the first', 'home.nearbyHead': 'Find freelancers in your city', 'home.nearbyLocation': 'Freelancers near you in', 'home.pickCity': "Pick a city to see who's available nearby.", 'home.firstFreelancer': 'Be one of the first freelancers', 'home.joinFreelancer': 'Join as a freelancer', 'home.setupFreelancer': 'Set up my freelancer profile', 'home.profileNearby': 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', 'home.readyPackages': 'Ready-made packages with clear prices.', 'home.noServices': 'No services yet', 'home.servicesDesc': 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', 'home.jobsDesc': 'Jobs posted by people who need a hand.', 'home.needDone': 'Need something done?', 'home.postProjectFree': 'Post your project for free and get proposals from freelancers near you.', 'home.earnOwn': 'Ready to earn on your own terms?', 'home.offerLocal': 'Offer your services at your own price and get found by customers in your area.', 'home.browseProjects': 'Browse projects',
   'chip.cleaning': 'Cleaning', 'chip.furniture': 'Furniture assembly', 'chip.logo': 'Logo design', 'chip.web': 'Web development', 'chip.translation': 'Translation',
-  'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio',
+  'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio', 'category.tutoring': 'Tutoring & Lessons',
   'footer.legal': 'Legal', 'legal.privacy': 'Privacy Policy', 'legal.cookies': 'Cookie Policy', 'legal.cookieSettings': 'Cookie settings',
   'cookie.title': 'Your privacy', 'cookie.text': 'We only use cookies that are needed to log you in and remember your choices. We will only use analytics or advertising cookies if you agree.',
   'cookie.accept': 'Accept all', 'cookie.reject': 'Reject optional', 'cookie.customize': 'Customize', 'cookie.save': 'Save choices', 'cookie.saved': 'Cookie choices saved',
@@ -409,9 +460,9 @@ function openAuth(mode = 'login', intent = 'hire') {
         <label class="choice"><input type="radio" name="intent" value="work" ${intent === 'work' ? 'checked' : ''}><span class="big-ico">🛠️</span> Work as a freelancer</label></div></div>
       <div class="field"><label>Full name</label><input name="name" required maxlength="60" autocomplete="name"></div>
       ${locationFields('', '', { required: true })}
-      <div class="fl-only"><div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
-        <div class="field"><label>What do you do?</label><input name="title" maxlength="60" placeholder="e.g. Plumber, Web designer"></div></div>
-        <p class="small muted" style="margin-top:-6px">Customers in your city and area will find you first.</p></div>
+      <div class="fl-only"><div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.ico} ${c.name}</option>`).join('')}</select></div>
+        <div class="field"><label>What do you do?</label><input name="title" maxlength="60" placeholder="e.g. Plumber, Maths tutor"></div></div>
+        ${freelancerFields({}, '')}</div>
       <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>Password</label>${pwField('password', 'new-password', 'minlength="8" placeholder="At least 8 characters"')}</div>
       <label class="filter-opt small"><input type="checkbox" name="terms" required> I agree to the Terms of Service and have read the <a href="#/privacy" data-action="close-modal">Privacy Policy</a></label>
@@ -427,7 +478,10 @@ function openAuth(mode = 'login', intent = 'hire') {
     if (sf) sf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(sf), work = f.get('intent') === 'work';
       const title = (f.get('title') || '').trim() || catById(f.get('category')).name + ' freelancer';
-      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
+      const details = work ? readFreelancerFields(f) : {};
+      const missing = work ? freelancerDetailsMissing(details, f.get('category')) : '';
+      if (missing) { errEl.textContent = missing; errEl.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms'), ...details }, null, { errEl, after: () => {
         closeModal(); go(work ? '#/dashboard/settings' : '#/post-project'); render();
         toast(work ? 'Account created! Tell customers about your skills.' : 'Account created! Post your first project.'); } });
     };
@@ -642,6 +696,10 @@ function filterSidebar(kind, q) {
     ${u && u.city ? `<button type="button" class="btn btn-outline btn-sm btn-block" data-action="near-me">Near me (${esc(locStr(u))})</button>` : ''}
     ${kind === 'projects' ? `<label class="filter-opt"><input type="checkbox" name="remote" value="1" ${q.remote ? 'checked' : ''}> Include remote projects</label>` : ''}
     <h4>Category</h4>${CATEGORIES.map(c => `<label class="filter-opt"><input type="checkbox" name="cat" value="${c.id}" ${cats.includes(c.id) ? 'checked' : ''}> ${c.ico} ${c.name}</label>`).join('')}
+    ${kind === 'freelancers' ? `<h4>📚 Tutoring</h4>
+      <select name="subject"><option value="">Any subject</option>${[...new Set([...TUTOR_SUBJECTS, ...db.users.flatMap(x => x.tutorSubjects || [])])].map(x => `<option ${q.subject === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <select name="level" style="margin-top:8px"><option value="">Any class / level</option>${[...new Set([...TUTOR_LEVELS, ...db.users.flatMap(x => x.tutorLevels || [])])].map(x => `<option ${q.level === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <h4>🕒 Available</h4><select name="time"><option value="">Any time</option>${TIMES.map(([k, l, h]) => `<option value="${k}" ${q.time === k ? 'selected' : ''}>${l} (${h})</option>`).join('')}</select>` : ''}
     <h4>${kind === 'projects' ? 'Budget' : kind === 'freelancers' ? 'Hourly rate' : 'Starting price'} (€)</h4><div class="row"><input name="min" type="number" placeholder="Min" value="${esc(q.min || '')}"><input name="max" type="number" placeholder="Max" value="${esc(q.max || '')}"></div>
     ${kind !== 'projects' ? `<h4>Seller</h4><label class="filter-opt"><input type="checkbox" name="verified" value="1" ${q.verified ? 'checked' : ''}> Verified only</label>` : `<h4>Status</h4><label class="filter-opt"><input type="checkbox" name="open" value="1" ${q.open ? 'checked' : ''}> Open for proposals</label>`}
     <button class="btn btn-primary btn-block" style="margin-top:14px">Apply filters</button>
@@ -656,6 +714,9 @@ function activeFilters(kind, q) {
   if (q.max) chips.push(['max', '', 'Up to €' + q.max]);
   if (q.verified) chips.push(['verified', '', '✓ Verified only']);
   if (q.open) chips.push(['open', '', 'Open only']);
+  if (q.subject) chips.push(['subject', '', '📚 ' + q.subject]);
+  if (q.level) chips.push(['level', '', '🎓 ' + q.level]);
+  if (q.time) chips.push(['time', '', '🕒 ' + (TIMES.find(([k]) => k === q.time) || ['', q.time])[1]]);
   if (q.remote) chips.push(['remote', '', '🌐 Incl. remote']);
   if (!chips.length) return '';
   return `<div class="active-filters">${chips.map(([k, v, l]) => `<button class="af-chip" data-action="clear-filter" data-key="${k}" data-val="${esc(v)}" aria-label="Remove filter ${esc(l)}">${esc(l)} <span>×</span></button>`).join('')}<button class="af-clear" data-action="nav" data-href="#/${kind}">Clear all</button></div>`;
@@ -665,6 +726,8 @@ function listToolbar(kind, q, count, noun, right = '') {
 }
 const matchQ = (q, ...fields) => !q || fields.join(' ').toLowerCase().includes(q.toLowerCase());
 const matchLoc = (q, o) => (!q.city || o.city === q.city) && (!q.area || o.area === q.area);
+// Freelancers also match every area they cover.
+const matchFreelancerLoc = (q, u) => (!q.city || u.city === q.city) && (!q.area || u.area === q.area || (u.serviceAreas || []).includes(q.area));
 // Closest to the viewer first (same area, then same city)
 const byNearMe = getLoc => (a, b) => { const u = me(); return u ? proximity(u, getLoc(b)) - proximity(u, getLoc(a)) : 0; };
 const locHeading = q => q.city ? ` in ${esc(q.area ? q.area + ', ' + q.city : q.city)}` : '';
@@ -674,9 +737,11 @@ function freelancerCard(u) {
   const from = svcs.length ? Math.min(...svcs.map(s => s.packages[0].price)) : 0;
   return `<div class="card fl-card">
     <div class="top">${avatar(u, 'md')}<div style="min-width:0"><a class="name" href="#/user/${u.id}">${esc(u.name)}</a> ${u.verification.status === 'verified' ? '<span class="verified" title="Verified">✓</span>' : ''}<div class="small muted truncate">${esc(u.title)}</div></div></div>
-    <div class="proj-meta"><span>📍 <b>${esc(locStr(u) || 'Location not set')}</b></span>${proxTag(u)}</div>
+    ${u.specialty ? `<div class="small"><b>${esc(u.specialty)}</b></div>` : ''}
+    <div class="proj-meta"><span>📍 <b>${esc(locStr(u) || 'Location not set')}</b>${u.serviceAreas.filter(a => a !== u.area).length ? ` <span class="muted">+${u.serviceAreas.filter(a => a !== u.area).length} areas</span>` : ''}</span>${proxTag(u)}</div>
+    ${availText(u.availability) ? `<div class="small muted">🕒 ${esc(availText(u.availability))}</div>` : ''}
     <div class="small">${stars(st.rating, st.reviews)} · ${st.doneProjects + st.doneServices} jobs done</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${u.skills.slice(0, 3).map(s => `<span class="tag gray">${esc(s)}</span>`).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${(u.tutorSubjects.length ? u.tutorSubjects : u.skills).slice(0, 3).map(s => `<span class="tag gray">${esc(s)}</span>`).join('')}</div>
     <div class="list-item" style="padding:10px 0 0;border:0"><span>${u.rate ? `<b class="price">${money(u.rate)}</b>/hr` : ''}${u.rate && from ? ' · ' : ''}${from ? `from <b>${money(from)}</b>` : ''}</span>
       <span style="display:flex;gap:6px"><a class="btn btn-outline btn-sm" href="#/messages/${u.id}">💬</a><a class="btn btn-primary btn-sm" href="#/user/${u.id}">View profile</a></span></div>
   </div>`;
@@ -684,8 +749,9 @@ function freelancerCard(u) {
 
 V.freelancers = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean);
-  const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchLoc(q, u) && (!cats.length || cats.includes(u.category))
-    && matchQ(q.q, u.name, u.title, u.bio, u.skills.join(' ')) && (!q.min || u.rate >= +q.min) && (!q.max || u.rate <= +q.max) && (!q.verified || u.verification.status === 'verified'))
+  const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category))
+    && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' ')) && (!q.min || u.rate >= +q.min) && (!q.max || u.rate <= +q.max) && (!q.verified || u.verification.status === 'verified')
+    && (!q.subject || u.tutorSubjects.includes(q.subject)) && (!q.level || u.tutorLevels.includes(q.level)) && (!q.time || u.availability.times.includes(q.time)))
     .sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating);
   return `<div class="page-head"><div class="container"><h1>Find freelancers${locHeading(q)}</h1><p>Hire trusted local professionals by city and area — or work with anyone remotely.</p></div></div>
   <div class="container layout">${filterSidebar('freelancers', q)}<div>
@@ -697,7 +763,7 @@ V.freelancers = (_, q) => {
 V.services = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean);
   let list = db.services.filter(s => (!cats.length || cats.includes(s.category)) && matchQ(q.q, s.title, s.description, user(s.sellerId).name, user(s.sellerId).skills.join(' '))
-    && (!q.min || s.packages[0].price >= +q.min) && (!q.max || s.packages[0].price <= +q.max) && (!q.verified || user(s.sellerId).verification.status === 'verified') && matchLoc(q, user(s.sellerId)));
+    && (!q.min || s.packages[0].price >= +q.min) && (!q.max || s.packages[0].price <= +q.max) && (!q.verified || user(s.sellerId).verification.status === 'verified') && matchFreelancerLoc(q, user(s.sellerId)));
   const sort = q.sort || (me() && me().city ? 'near' : 'rating');
   if (sort === 'near') list.sort((a, b) => byNearMe(s => user(s.sellerId))(a, b) || serviceRating(b.id).avg - serviceRating(a.id).avg); else list.sort(sort === 'price' ? (a, b) => a.packages[0].price - b.packages[0].price : sort === 'new' ? (a, b) => b.created.localeCompare(a.created) : (a, b) => serviceRating(b.id).avg - serviceRating(a.id).avg);
   return `<div class="page-head"><div class="container"><h1>${t('nav.services')}${locHeading(q)}</h1><p>Ready-made packages from verified professionals.</p></div></div>
@@ -813,6 +879,11 @@ V.user = ([id]) => {
       <h2 style="margin-top:30px">Reviews ${st.reviews ? `<span class="stars">★ ${st.rating.toFixed(1)}</span>` : ''}</h2>
       ${rv.length ? rv.map(x => { const f = user(x.from); return `<div class="review">${avatar(f, 'sm')}<div><b>${esc(f.name)}</b> <span class="stars">${'★'.repeat(x.rating)}</span> <span class="muted small">${ago(x.date)}</span><p style="margin:4px 0 0">${esc(x.text)}</p></div></div>`; }).join('') : '<p class="muted">No reviews yet.</p>'}
     </div><aside><div class="card card-pad">
+      ${u.isFreelancer ? `${u.specialty ? `<h3>Speciality</h3><p style="margin:0 0 20px">${esc(u.specialty)}</p>` : ''}
+        ${u.tutorSubjects.length ? `<h3>📚 Teaches</h3><div class="detail-list">${u.tutorSubjects.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
+          ${u.tutorLevels.length ? `<div class="detail-list" style="margin-bottom:20px">${u.tutorLevels.map(x => `<span class="tag gray">🎓 ${esc(x)}</span>`).join('')}</div>` : '<div style="margin-bottom:20px"></div>'}` : ''}
+        ${availText(u.availability) ? `<h3>🕒 Available</h3><p style="margin:0 0 20px">${esc(availText(u.availability))}</p>` : ''}
+        ${u.serviceAreas.length ? `<h3>📍 Areas covered</h3><div class="detail-list" style="margin-bottom:20px">${u.serviceAreas.map(a => `<span class="tag gray">${esc(a)}</span>`).join('')}</div>` : ''}` : ''}
       <h3>Skills</h3><div style="display:flex;gap:6px;flex-wrap:wrap">${u.skills.length ? u.skills.map(s => `<span class="tag">${esc(s)}</span>`).join('') : '<span class="muted">—</span>'}</div>
       <h3 style="margin-top:20px">Verification</h3><p class="${u.verification.status === 'verified' ? 'verified' : 'muted'}">${u.verification.status === 'verified' ? '✓ Identity verified by Worklay' : u.verification.status === 'pending' ? 'Verification under review' : 'Not verified yet'}</p>
     </div></aside></div></div>`;
@@ -921,8 +992,9 @@ V.dashboard = ([tab = 'overview']) => {
     <h3 style="margin-top:8px">📍 Your location</h3><p class="small muted" style="margin-top:-4px">Customers search by city and area, so freelancers nearby are shown first.</p>
     ${locationFields(u.city || '', u.area || '', { required: true })}
     <label class="filter-opt" style="margin-bottom:12px"><input type="checkbox" name="isFreelancer" ${u.isFreelancer ? 'checked' : ''}> I offer services as a freelancer (show me in “Find freelancers”)</label>
-    <div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}" ${u.category === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}</select></div>
+    <div class="row"><div class="field"><label>Main service category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}" ${u.category === c.id ? 'selected' : ''}>${c.ico} ${c.name}</option>`).join('')}</select></div>
       <div class="field"><label>Hourly rate (€)</label><input name="rate" type="number" min="0" step="1" value="${u.rate || ''}"></div></div>
+    <div class="fl-settings">${freelancerFields(u, u.city || '')}</div>
     <div class="field"><label>Bio</label><textarea name="bio">${esc(u.bio)}</textarea></div>
     <div class="field"><label>Skills (comma separated)</label><input name="skills" value="${esc(u.skills.join(', '))}"></div>
     <button class="btn btn-primary">Save changes</button></form>`;
@@ -1161,7 +1233,9 @@ async function uploadPhoto(input) {
 document.addEventListener('change', e => {
   if (e.target.id === 'photo-input') { uploadPhoto(e.target); return; }
   if (e.target.dataset.action === 'sort') setQuery({ sort: e.target.value });
-  if (e.target.dataset.role === 'city') { // refill the area list for the chosen city
+  if (e.target.dataset.role === 'city') { // refill the area list (and "areas you cover") for the chosen city
+    const cover = e.target.form && e.target.form.querySelector('[data-role="cover-areas"]');
+    if (cover) cover.innerHTML = areaChecks(e.target.value);
     const areaSel = e.target.form && e.target.form.querySelector('[data-role="area"]'); if (!areaSel) return;
     const areas = CITIES[e.target.value] || [];
     areaSel.innerHTML = `<option value="">${areaSel.dataset.any ? 'All areas' : 'Select area'}</option>` + areas.map(a => `<option>${a}</option>`).join('');
@@ -1185,7 +1259,7 @@ document.addEventListener('submit', e => {
   const handlers = {
     'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
-    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open') };
+    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time') };
       Object.keys(q).forEach(k => !q[k] && delete q[k]); const { name } = parseHash(); go(`#/${name}?` + new URLSearchParams(q)); },
     'project-form': () => {
       if (+f.get('max') < +f.get('min')) return toast('Max budget must be greater than min budget.');
@@ -1197,7 +1271,7 @@ document.addEventListener('submit', e => {
       }, 'Service published!', { after: r => go('#/service/' + r.id) }),
     'chat-form': () => { const text = (f.get('text') || '').trim(); if (!text) return;
       act('message/send', { to: form.dataset.to, text }, null, { after: () => { render(); const i = $('#chat-form input'); i && i.focus(); } }); },
-    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), category: f.get('category'), rate: f.get('rate'), bio: f.get('bio'), skills: f.get('skills') }, 'Profile saved'),
+    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), category: f.get('category'), rate: f.get('rate'), bio: f.get('bio'), skills: f.get('skills'), ...readFreelancerFields(f) }, 'Profile saved'),
     'contact-form': () => act('contact/send', { name: f.get('name'), email: f.get('email'), subject: f.get('subject'), message: f.get('message') },
       'Thanks! We’ll get back to you within one business day.', { after: () => form.reset() }),
     'verify-form': () => { const file = f.get('doc'); if (!file || !file.size) return toast('Please choose a file.');

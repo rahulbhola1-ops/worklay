@@ -47,6 +47,31 @@ const json = v => JSON.stringify(v); // jsonb columns take JSON text
 const skillList = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 const tokenHash = token => crypto.createHash('sha256').update(token).digest('hex');
 
+/* Freelancer details: speciality, availability, areas covered and (for tutors) subjects/classes. */
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const TIMES = ['morning', 'afternoon', 'evening'];
+// Unique, trimmed, non-empty strings, capped in count and length.
+const cleanList = (v, max, len = 40) => [...new Set((Array.isArray(v) ? v : []).map(x => String(x ?? '').trim().slice(0, len)).filter(Boolean))].slice(0, max);
+function freelancerDetails(data, city, category) {
+  const tutoring = category === 'tutoring';
+  return {
+    specialty: String(data.specialty || '').trim().slice(0, 80),
+    availability: json({ days: DAYS.filter(d => cleanList(data.days, 7).includes(d)), times: TIMES.filter(t => cleanList(data.times, 3).includes(t)) }),
+    service_areas: json(cleanList(data.serviceAreas, 40).filter(a => (CITIES[city] || []).includes(a))),
+    tutor_subjects: json(tutoring ? cleanList(data.tutorSubjects, 30) : []),
+    tutor_levels: json(tutoring ? cleanList(data.tutorLevels, 12) : []),
+  };
+}
+// What a freelancer must fill in at sign-up.
+function missingFreelancerDetails(data, category) {
+  if (!String(data.specialty || '').trim()) return 'Please tell customers your speciality.';
+  if (!cleanList(data.days, 7).some(d => DAYS.includes(d))) return 'Please choose the days you are available.';
+  if (!cleanList(data.times, 3).some(t => TIMES.includes(t))) return 'Please choose the times of day you are available.';
+  if (category === 'tutoring' && !cleanList(data.tutorSubjects, 30).length) return 'Please choose at least one subject you teach.';
+  if (category === 'tutoring' && !cleanList(data.tutorLevels, 12).length) return 'Please choose at least one class or level you teach.';
+  return null;
+}
+
 function parseCookies(req) {
   const out = {};
   for (const pair of (req.headers.cookie || '').split(';')) {
@@ -229,11 +254,14 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'auth/register': {
         if (!data.email || !data.password) return bad(res, 'Email and password are required.');
         if (String(data.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
+        const work = data.intent === 'work', category = String(data.category || ''), city = String(data.city || '');
+        if (work) { const missing = missingFreelancerDetails(data, category); if (missing) return bad(res, missing); }
         try {
           const u = await db.insertInto('wl_users').values({
             name: String(data.name || ''), email: String(data.email).toLowerCase(), pw_hash: passwordHash(String(data.password)),
-            title: String(data.title || ''), city: String(data.city || ''), area: String(data.area || ''),
-            is_freelancer: data.intent === 'work', category: String(data.category || ''),
+            title: String(data.title || ''), city, area: String(data.area || ''),
+            is_freelancer: work, category,
+            ...(work ? freelancerDetails(data, city, category) : {}),
           }).returning('id').executeTakeFirstOrThrow();
           await login(res, u.id);
           return res.json({ ok: true, id: sid(u.id) });
@@ -261,6 +289,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
             name: String(data.name || u.name), email: String(data.email || u.email).toLowerCase(), title: String(data.title || ''),
             city: String(data.city || ''), area: String(data.area || ''), is_freelancer: !!data.isFreelancer, category: String(data.category || ''),
             rate: Number(data.rate || 0), bio: String(data.bio || ''), skills: json(skillList(data.skills)),
+            ...freelancerDetails(data, String(data.city || ''), String(data.category || '')),
           }).where('id', '=', u.id).execute();
         } catch (e) {
           if (isUniqueViolation(e)) return bad(res, 'Another account already uses that email.');
@@ -478,6 +507,8 @@ async function bootstrap(user) {
         id: sid(u.id), name: u.name, title: u.title, country: u.country, city: u.city, area: u.area,
         bio: u.bio || '', skills: list(u.skills), isFreelancer: u.is_freelancer,
         category: u.category, rate: u.rate, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
+        specialty: u.specialty, availability: { days: list(u.availability?.days), times: list(u.availability?.times) },
+        serviceAreas: list(u.service_areas), tutorSubjects: list(u.tutor_subjects), tutorLevels: list(u.tutor_levels),
         verification: { status: u.ver_status },
         stats: { inQueue: oStats.get(u.id)?.in_queue || 0, doneServices: oStats.get(u.id)?.done || 0, doneProjects: pStats.get(u.id) || 0 },
         balance: self ? u.balance : 0,
