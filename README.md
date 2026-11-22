@@ -44,6 +44,14 @@ npm start
 
 With Docker, `docker compose up -d --build` starts the app and its database; see [DEPLOY.md](DEPLOY.md).
 
+## Deployment
+
+The code lives at [github.com/rahulbhola1-ops/worklay](https://github.com/rahulbhola1-ops/worklay).
+Every push to `master` (including merged pull requests) runs the Deploy workflow in
+`.github/workflows/deploy.yml`, which updates the server over SSH and rebuilds the container. It can
+also be started by hand from the Actions tab ("Run workflow"). The workflow needs the `DEPLOY_*`
+secrets set in the repository settings; until they are, it skips the deploy with a warning.
+
 ## Sign in with Google (optional)
 
 The "Continue with Google" button only appears when Google credentials are configured.
