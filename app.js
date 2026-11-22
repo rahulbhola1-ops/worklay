@@ -27,6 +27,7 @@ const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
 const FEATURE_NAMES = ['Source File', 'Social Media Kit', 'High Resolution', 'Project Upload'];
 let PAYOUT_METHODS = ['PayPal', 'Payoneer', 'Bank transfer'];
 let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
+let PHOTO_UPLOADS = false, MAX_PHOTO_MB = 3; // profile photos (Cloudflare R2)
 let CARD_PAYMENTS = false; // true when the server has Stripe configured: customers pay by card, freelancers are paid through Stripe
 
 // Cities and their areas/districts. The live list comes from api/config.php.
@@ -246,7 +247,7 @@ async function api(route, data) {
 }
 async function refresh() {
   db = await api('bootstrap');
-  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments; }
+  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -294,7 +295,10 @@ function toast(html, kind = '') {
   $('#toasts').appendChild(el);
   setTimeout(() => el.remove(), kind === 'error' ? 6000 : 4200);
 }
-function avatar(u, size = '') { return `<span class="avatar ${size}" style="background:${u.color}22;color:${u.color}">${esc(initials(u.name))}</span>`; }
+function avatar(u, size = '') {
+  if (u.avatarUrl) return `<img class="avatar ${size}" src="${esc(u.avatarUrl)}" alt="${esc(u.name)}" loading="lazy" decoding="async">`;
+  return `<span class="avatar ${size}" style="background:${u.color}22;color:${u.color}">${esc(initials(u.name))}</span>`;
+}
 function stars(avg, n) { return n ? `<span class="stars">★ ${avg.toFixed(1)}</span> <span class="muted">(${n})</span>` : '<span class="muted">New</span>'; }
 function badges(u) {
   const s = userStats(u.id), out = [];
@@ -906,7 +910,12 @@ V.dashboard = ([tab = 'overview']) => {
     <form id="verify-form"><div class="field"><label>Document type</label><select name="docType"><option>Passport</option><option>Driving license</option><option>ID card</option></select></div>
     <div class="field"><label>Document (JPG, PNG, WEBP or PDF, max 5 MB)</label><input type="file" name="doc" accept="image/*,.pdf" required></div>
     <button class="btn btn-primary">Submit for verification</button></form>`}</div>`; }
-  if (tab === 'settings') body = `<h1>Profile settings</h1><form class="card card-pad" id="settings-form">
+  if (tab === 'settings') body = `<h1>Profile settings</h1>
+    ${PHOTO_UPLOADS ? `<div class="card card-pad photo-card">${avatar(u, 'lg')}<div>
+      <h3 style="margin:0 0 4px">Profile photo</h3><p class="small muted" style="margin:0 0 12px">A clear photo of your face helps customers trust you. JPG, PNG or WebP, up to ${MAX_PHOTO_MB} MB.</p>
+      <label class="btn btn-primary btn-sm">${u.avatarUrl ? 'Change photo' : 'Upload photo'}<input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" hidden></label>
+      ${u.avatarUrl ? '<button class="btn btn-ghost btn-sm" type="button" data-action="photo-remove">Remove</button>' : ''}</div></div>` : ''}
+    <form class="card card-pad" id="settings-form">
     <div class="row"><div class="field"><label>Name</label><input name="name" value="${esc(u.name)}" required></div><div class="field"><label>Email</label><input name="email" type="email" value="${esc(u.email)}" required></div></div>
     <div class="field"><label>Headline</label><input name="title" value="${esc(u.title)}"></div>
     <h3 style="margin-top:8px">📍 Your location</h3><p class="small muted" style="margin-top:-4px">Customers search by city and area, so freelancers nearby are shown first.</p>
@@ -1091,6 +1100,7 @@ const A = {
       if (r.checkoutUrl) { location.href = r.checkoutUrl; return; } // Stripe Checkout
       closeModal(); go('#/dashboard/orders'); render(); toast('Order placed ✓ The seller has been notified.', 'success'); } }),
   'cancel-order': el => { if (confirm('Cancel this unpaid order?')) act('order/cancel', { id: el.dataset.id }, 'Order cancelled.'); },
+  'photo-remove': () => { if (confirm('Remove your profile photo?')) act('profile/photo-remove', {}, 'Photo removed.'); },
   'stripe-connect': () => act('payments/connect', {}, null, { after: r => { location.href = r.url; } }),
   'stripe-dashboard': () => act('payments/dashboard', {}, null, { after: r => { window.open(r.url, '_blank', 'noopener'); render(); } }),
   deliver: el => act('order/deliver', { id: el.dataset.id }, 'Marked as delivered. The buyer has been notified.'),
@@ -1135,7 +1145,21 @@ document.addEventListener('click', e => {
   if (el.tagName === 'BUTTON' || el.getAttribute('href') === '#') e.preventDefault();
   A[el.dataset.action](el, e);
 });
+async function uploadPhoto(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) { toast('Please choose a JPG, PNG or WebP image.', 'error'); input.value = ''; return; }
+  if (file.size > MAX_PHOTO_MB * 1024 * 1024) { toast(`The photo is too large (max ${MAX_PHOTO_MB} MB).`, 'error'); input.value = ''; return; }
+  const label = input.closest('label'); label && label.classList.add('loading');
+  const fd = new FormData(); fd.append('photo', file);
+  try {
+    const r = await fetch(API_URL.replace(/\?.*$/, '') + '/profile/photo', { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Worklay': '1' } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'The upload failed. Please try again.');
+    await refresh(); render(); toast('Profile photo updated ✓', 'success');
+  } catch (err) { toast(esc(err.message), 'error'); label && label.classList.remove('loading'); input.value = ''; }
+}
 document.addEventListener('change', e => {
+  if (e.target.id === 'photo-input') { uploadPhoto(e.target); return; }
   if (e.target.dataset.action === 'sort') setQuery({ sort: e.target.value });
   if (e.target.dataset.role === 'city') { // refill the area list for the chosen city
     const areaSel = e.target.form && e.target.form.querySelector('[data-role="area"]'); if (!areaSel) return;

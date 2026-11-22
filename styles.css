@@ -448,3 +448,8 @@ input.switch[type=checkbox]:focus-visible{outline:3px solid rgba(56,88,255,.4);o
 .btn-google:hover{background:#f8f9ff;border-color:#c6cad6}
 .auth-divider{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--muted);font-size:.85rem}
 .auth-divider::before,.auth-divider::after{content:'';flex:1;border-top:1px solid var(--line)}
+
+/* ---------- Profile photo ---------- */
+img.avatar{display:block;padding:0}
+.photo-card{display:flex;align-items:center;gap:22px;margin-bottom:20px;flex-wrap:wrap}
+.photo-card label.btn{cursor:pointer;margin-right:6px}

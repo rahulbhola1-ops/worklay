@@ -85,3 +85,20 @@ bank. Without Stripe keys the site keeps the manual payout flow.
 5. Restart the server. Test cards: `4242 4242 4242 4242`, any future date, any CVC.
 
 Refunds and disputes are handled in the Stripe dashboard.
+
+## Profile photos (Cloudflare R2, optional)
+
+Users can upload a profile photo (JPG, PNG or WebP, up to 3 MB) under **Dashboard → Profile
+settings**. Photos are stored in the R2 bucket `worklay` as `avatars/<user id>/<random>.<ext>`;
+uploading a new photo or removing it deletes the old file. The server checks the file contents,
+so other file types are refused even if renamed.
+
+1. Cloudflare dashboard → **R2 Object Storage** → **Manage API tokens** → **Create API token**.
+   Permission **Object Read & Write**, limited to the `worklay` bucket.
+2. Put the values in `.env`: `R2_ACCOUNT_ID` (the long id in the bucket's S3 API address),
+   `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`.
+3. Restart the server. The upload button appears in Profile settings.
+
+The bucket can stay private: the app serves photos at `/api/files/...` with long browser caching.
+If you connect a custom domain to the bucket (bucket → Settings → Custom Domains), set
+`R2_PUBLIC_URL` to it and photos are linked there directly instead.

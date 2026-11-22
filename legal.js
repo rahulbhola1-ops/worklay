@@ -49,7 +49,7 @@ export function privacyPage(lang) {
     <h2>2. Milliseid andmeid me kogume</h2>
     <ul>
       <li><b>Kontoandmed:</b> nimi, e-post, parool (salvestame ainult räsi), linn ja piirkond ning kas palkad või töötad vabakutselisena. Kui registreerud Google’i kontoga, saame Google’ilt sinu nime, e-posti aadressi ja Google’i konto ID; sinu Google’i parooli me ei näe.</li>
-      <li><b>Profiiliandmed:</b> ametinimetus, tutvustus, oskused, põhikategooria ja tunnihind, kui need lisad.</li>
+      <li><b>Profiiliandmed:</b> profiilipilt, ametinimetus, tutvustus, oskused, põhikategooria ja tunnihind, kui need lisad. Profiilipildi saad igal ajal profiili seadetes eemaldada; siis kustutame faili.</li>
       <li><b>Isikusamasuse kontroll:</b> dokumendi tüüp, failinimi ja üleslaaditud passi, juhiloa või ID-kaardi pilt.</li>
       <li><b>Sinu loodud sisu:</b> projektid, teenused, pakkumised, tellimused, arvustused, sõnumid, soovinimekiri ja jälgimised.</li>
       <li><b>Makse- ja väljamakseandmed:</b> tellimuste summad, maksete olek, saldo ja väljamaksed. Kaardimakseid töötleb Stripe: kaardiandmed sisestad Stripe’i lehel ja Worklay neid ei näe ega salvesta. Vabakutseliste isikusamasuse ja pangaandmed kogub väljamaksete seadistamisel Stripe.</li>
@@ -68,10 +68,10 @@ export function privacyPage(lang) {
 
     <h2>4. Kes sinu andmeid näeb</h2>
     <ul>
-      <li><b>Kõik külastajad:</b> sinu avalik profiil (nimi, ametinimetus, linn ja piirkond, tutvustus, oskused, hind, arvustused, kontrollitud märk) ning sinu postitatud projektid ja teenused. Sinu e-post ei ole avalik.</li>
+      <li><b>Kõik külastajad:</b> sinu avalik profiil (nimi, profiilipilt, ametinimetus, linn ja piirkond, tutvustus, oskused, hind, arvustused, kontrollitud märk) ning sinu postitatud projektid ja teenused. Sinu e-post ei ole avalik.</li>
       <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi ja tellimusi näevad tehingu osapooled.</li>
       <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
-      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}), kes töötleb andmeid ainult meie juhiste järgi.</li>
+      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte. Mõlemad töötlevad andmeid ainult meie juhiste järgi.</li>
       <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Iirimaa) töötleb kaardimakseid, hoiab raha kuni töö kinnitamiseni, kontrollib vabakutseliste isikut ja teeb neile väljamakseid. Stripe on nende andmete osas iseseisev vastutav töötleja.</li>
       <li><b>Makseteenuse pakkujad:</b> PayPal, Payoneer või sinu pank saavad väljamakse tegemiseks vajalikud andmed ja töötlevad neid iseseisva vastutava töötlejana.</li>
@@ -120,7 +120,7 @@ export function privacyPage(lang) {
     <h2>2. What data we collect</h2>
     <ul>
       <li><b>Account data:</b> name, email, password (we only store a hash), city and area, and whether you hire or work as a freelancer. If you sign up with Google, we receive your name, email address and Google account ID from Google; we never see your Google password.</li>
-      <li><b>Profile data:</b> headline, bio, skills, main category and rate, if you add them.</li>
+      <li><b>Profile data:</b> profile photo, headline, bio, skills, main category and rate, if you add them. You can remove your photo at any time in your profile settings, and we then delete the file.</li>
       <li><b>Identity verification:</b> document type, file name and the image of your passport, driving license or ID card that you upload.</li>
       <li><b>Content you create:</b> projects, services, proposals, orders, reviews, messages, wishlist items and follows.</li>
       <li><b>Payment and payout data:</b> order amounts, payment status, your balance and payouts. Card payments are processed by Stripe: you enter your card details on Stripe’s page, and Worklay never sees or stores them. When freelancers set up payouts, Stripe collects their identity and bank details.</li>
@@ -139,10 +139,10 @@ export function privacyPage(lang) {
 
     <h2>4. Who can see your data</h2>
     <ul>
-      <li><b>Everyone:</b> your public profile (name, headline, city and area, bio, skills, rate, reviews, verified badge) and the projects and services you post. Your email is not public.</li>
+      <li><b>Everyone:</b> your public profile (name, profile photo, headline, city and area, bio, skills, rate, reviews, verified badge) and the projects and services you post. Your email is not public.</li>
       <li><b>Other members:</b> messages are visible only to the recipient; proposals and orders are visible to the parties involved.</li>
       <li><b>Worklay administrators:</b> see verification documents, payout requests and contact messages only to handle them.</li>
-      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}), which processes data only on our instructions.</li>
+      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos. Both process data only on our instructions.</li>
       <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Ireland) processes card payments, holds the money until the work is approved, verifies freelancers’ identity and pays them out. Stripe acts as an independent controller for this data.</li>
       <li><b>Payment providers:</b> PayPal, Payoneer or your bank receive the details needed to send a payout and handle them as independent controllers.</li>
