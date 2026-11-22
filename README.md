@@ -1,16 +1,39 @@
 # Worklay
 
-Worklay is a local Node.js application using Vite, TanStack Router, Express, and SQLite.
-The interface supports English and Estonian; use the flag menu in the top navigation to switch languages.
+Worklay is a Node.js application using Vite, TanStack Router, Express, and PostgreSQL (through
+[Kysely](https://kysely.dev)). The interface supports English and Estonian; use the flag menu in
+the top navigation to switch languages.
 
 ## Run locally
 
+You need Node.js and Docker Desktop (for the database).
+
 ```powershell
 npm install
+Copy-Item .env.example .env   # first time only; the DATABASE_URL in it matches npm run db:up
+npm run db:up                 # starts PostgreSQL in Docker
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173/`.
+Open `http://127.0.0.1:5173/`. The server applies any pending database migrations when it starts.
+`npm run db:down` stops the database; its data is kept for next time.
+
+## Database
+
+All data lives in PostgreSQL. The schema is defined by migrations in `db/migrations/`
+(`0001_initial.mjs`, …), applied in order and recorded in the `kysely_migration` table.
+
+| Command | What it does |
+|---|---|
+| `npm run db:migrate` | apply pending migrations (also happens on server start) |
+| `npm run db:migrate:down` | undo the most recent migration |
+
+Migrations are written in plain SQL. To change the schema, add a new file such as
+`db/migrations/0002_add_something.mjs` that lists its SQL statements and exports `up(db)` and
+`down(db)`; copy the pattern from `0001_initial.mjs`. Each migration runs in a transaction. Never
+edit a migration that has already run on the live site.
+
+Set `MIGRATE_ON_START=false` to stop the server from migrating automatically.
 
 ## Production build
 
@@ -18,6 +41,8 @@ Open `http://127.0.0.1:5173/`.
 npm run build
 npm start
 ```
+
+With Docker, `docker compose up -d --build` starts the app and its database; see [DEPLOY.md](DEPLOY.md).
 
 ## Sign in with Google (optional)
 

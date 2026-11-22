@@ -1,0 +1,22 @@
+# Local development database only: npm run db:up / npm run db:down
+# Reachable from this computer only, at postgres://worklay:worklay@127.0.0.1:5432/worklay
+name: worklay-dev
+services:
+  db:
+    image: postgres:18.7-alpine3.24
+    environment:
+      POSTGRES_DB: worklay
+      POSTGRES_USER: worklay
+      POSTGRES_PASSWORD: worklay
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - worklay-dev-pg:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worklay -d worklay"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  worklay-dev-pg:

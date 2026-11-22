@@ -70,9 +70,37 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 
 | Setting | Notes |
 |---|---|
+| `POSTGRES_PASSWORD` | **required**: password for the database container; letters and digits only, e.g. `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"` |
 | `PUBLIC_URL` | `https://worklay.com` |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google sign-in; the Google client must allow `https://worklay.com/api/auth/google/callback` |
 | `STRIPE_SECRET_KEY` | live key `sk_live_…` once Stripe live mode is set up; leave empty to keep manual payouts |
 | `STRIPE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint `https://worklay.com/api/payments/webhook` |
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
+
+## Moving the live site to PostgreSQL (once)
+
+Older versions stored data in a SQLite file. That data is **not** carried over: the PostgreSQL
+version starts with an empty database, so existing accounts, services, projects and orders on the
+live site will no longer appear, and people need to sign up again.
+
+1. Add `POSTGRES_PASSWORD=...` to `.env` on the server. Do this **before** merging the Postgres
+   change if the automatic deploy is set up: without it, `docker compose` refuses to start, and
+   the old version keeps running.
+2. Deploy as usual (or run `git pull && docker compose up -d --build`). The app creates the
+   tables on its first start.
+
+The old SQLite file is left in the `worklay-data` Docker volume, which nothing uses any more.
+Remove it with `docker volume rm <project>_worklay-data` (see `docker volume ls`) once you're sure
+you don't need it.
+
+## Backups
+
+Back up the database regularly, for example daily with cron:
+
+```bash
+docker compose exec -T db pg_dump -U worklay -d worklay --format=custom > backup-$(date +%F).dump
+```
+
+Restore into an empty database with `pg_restore -U worklay -d worklay --clean backup.dump` (run it
+inside the `db` container), and keep copies somewhere other than this server.
