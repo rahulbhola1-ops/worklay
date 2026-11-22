@@ -23,7 +23,8 @@ WORKDIR /app
 COPY --from=build /app/package.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY --from=build /app/server.mjs /app/payments.mjs /app/storage.mjs /app/scheduling.mjs ./
+# All server-side modules (server, payments, mail, storage, scheduling, ...)
+COPY --from=build /app/*.mjs ./
 COPY --from=build /app/db ./db
 
 RUN chown -R node:node /app
