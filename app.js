@@ -268,7 +268,7 @@ async function act(route, data, okMsg, { errEl, after } = {}) {
     return null;
   } finally { busy = false; if (btn) btn.classList.remove('loading'); }
 }
-const me =() => db.users.find(u => u.id === db.currentUser) || null;
+const me = () => db.users.find(u => u.id === db.me) || null; // the server sends the logged-in user id as `me`
 const user = id => db.users.find(u => u.id === id);
 const service = id => db.services.find(s => s.id === id);
 const project = id => db.projects.find(p => p.id === id);
