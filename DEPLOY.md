@@ -82,6 +82,23 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
 
+`PUBLIC_URL` matters for search engines too. It is used in canonical links, `sitemap.xml` and
+`robots.txt`, and an `https://` value turns on the `Secure` flag on the login cookie.
+
+## Search engines and security outside the code
+
+- **Google Search Console** and **Bing Webmaster Tools**: verify `worklay.com` and submit
+  `https://worklay.com/sitemap.xml`.
+- **Cloudflare → SSL/TLS**: use **Full (strict)**, and turn on **Always Use HTTPS**. HSTS is
+  already sent by the app on HTTPS.
+- **Cloudflare → Security → Bots**: leave **Block AI bots** off if you want AI search tools (GPTBot,
+  ClaudeBot, PerplexityBot and others) to read public pages. Leave verified search engine bots allowed.
+- **Cloudflare → Security → WAF**: add a rate-limiting rule for `POST /api` with `r=auth/login` or
+  `r=auth/register` in the query, for example 20 requests per minute per IP. The app also limits
+  sign-ins, but that limit is per server process and resets on restart.
+- **Real visitor IP**: behind Cloudflare, the app reads `CF-Connecting-IP`. Make sure the server only
+  accepts web traffic from Cloudflare (firewall or Cloudflare Tunnel), so nobody can fake that header.
+
 ## Moving the live site to PostgreSQL (once)
 
 Older versions stored data in a SQLite file. That data is **not** carried over: the PostgreSQL
