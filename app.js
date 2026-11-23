@@ -441,13 +441,23 @@ const empty = (icon, text, cta = '') => `<div class="empty"><div class="big">${i
 const requireLogin = () => { if (me()) return true; openLogin(); return false; };
 
 /* ---------- modals ---------- */
+let modalOpener = null;
 function modal(html, onMount) {
   const root = $('#modal-root');
-  root.innerHTML = `<div class="modal-bg" data-action="close-modal-bg"><div class="modal" role="dialog" aria-modal="true"><button class="close" data-action="close-modal" aria-label="Close">×</button>${html}</div></div>`;
-  onMount && onMount(root.querySelector('.modal'));
-  const f = root.querySelector('input,textarea,select'); f && f.focus();
+  if (!root.innerHTML) modalOpener = document.activeElement;
+  root.innerHTML = `<div class="modal-bg" data-action="close-modal-bg"><div class="modal" role="dialog" aria-modal="true" tabindex="-1"><button class="close" data-action="close-modal" aria-label="Close">×</button>${html}</div></div>`;
+  const box = root.querySelector('.modal'), title = box.querySelector('h1,h2,h3');
+  if (title) { title.id = title.id || 'modal-title'; box.setAttribute('aria-labelledby', title.id); }
+  onMount && onMount(box);
+  const f = root.querySelector('input:not([type=hidden]),textarea,select'); (f || box).focus();
 }
-const closeModal = () => { $('#modal-root').innerHTML = ''; };
+const closeModal = () => {
+  const root = $('#modal-root'); if (!root.innerHTML) return;
+  root.innerHTML = '';
+  if (modalOpener && document.contains(modalOpener)) modalOpener.focus();
+  modalOpener = null;
+};
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 function openLogin() { openAuth('login'); }
 const GOOGLE_G = '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2c-2 1.5-4.5 2.4-7.2 2.4-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
@@ -474,7 +484,7 @@ function handleGoogleReturn() {
     if (q.stripe === 'return') api('payments/status', {}).then(r => refresh().then(() => { render(); toast(r.ready ? 'Payouts are set up ✓' : 'Stripe still needs a few details. You can continue setup any time.', r.ready ? 'success' : ''); })).catch(e => toast(esc(e.message), 'error'));
     const { name, args } = parseHash(), rest = { ...q }; delete rest.payment; delete rest.stripe;
     const qs = new URLSearchParams(rest).toString();
-    history.replaceState(null, '', '#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
+    history.replaceState(null, '', '/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
     return;
   }
   if (!q.auth_error && !q.welcome && !q.signed_in) return;
@@ -483,7 +493,7 @@ function handleGoogleReturn() {
   else if (q.signed_in === 'google' && me()) toast(t('auth.welcomeBackName').replace('{name}', esc(me().name.split(' ')[0])), 'success');
   const { name, args } = parseHash(), rest = { ...q }; delete rest.auth_error; delete rest.welcome; delete rest.signed_in;
   const qs = new URLSearchParams(rest).toString();
-  history.replaceState(null, '', '#/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
+  history.replaceState(null, '', '/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
 }
 const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">${t('auth.show')}</button></div>`;
 function openAuth(mode = 'login', intent = 'hire') {
@@ -604,10 +614,10 @@ function renderHeader() {
       + tab('#/messages', '💬', 'Messages', ['messages'], '', unreadM) + tab('#/dashboard', '👤', 'Me', ['dashboard', 'notifications', 'wishlist', 'user'], '', unreadN);
   }
   el.innerHTML = `${languagePicker()}
-    <a class="icon-btn hide-sm" href="#/wishlist" title="Wishlist">♡</a>
-    <a class="icon-btn" href="#/messages" title="Messages">💬${unreadM ? `<span class="dot">${unreadM}</span>` : ''}</a>
-    <a class="icon-btn" href="#/notifications" title="Notifications">🔔${unreadN ? `<span class="dot">${unreadN}</span>` : ''}</a>
-    <div class="dropdown" id="userdd"><button class="icon-btn" style="padding:0;border:0" data-action="toggle-dd" aria-label="Account menu">${avatar(u)}</button>
+    <a class="icon-btn hide-sm" href="#/wishlist" title="Wishlist" aria-label="Wishlist">♡</a>
+    <a class="icon-btn" href="#/messages" title="Messages" aria-label="Messages">💬${unreadM ? `<span class="dot">${unreadM}</span>` : ''}</a>
+    <a class="icon-btn" href="#/notifications" title="Notifications" aria-label="Notifications">🔔${unreadN ? `<span class="dot">${unreadN}</span>` : ''}</a>
+    <div class="dropdown" id="userdd"><button class="icon-btn" style="padding:0;border:0" data-action="toggle-dd" aria-label="Account menu" aria-haspopup="true" aria-expanded="false">${avatar(u)}</button>
       <div class="dropdown-menu"><div style="padding:8px 12px"><b>${esc(u.name)}</b><br><small class="muted">${money(u.balance)} balance</small></div><hr>
         <a href="#/dashboard">Dashboard</a><a href="#/user/${u.id}">My profile</a><a href="#/post-project">Post a project</a><a href="#/post-service">Offer a service</a><a href="#/wishlist">Wishlist</a>
         ${u.role === 'admin' ? '<a href="#/admin">Admin panel</a>' : ''}<hr><button data-action="logout">Log out</button></div></div>`;
@@ -1200,7 +1210,7 @@ V.onboarding = (_, q) => {
   if (step === '4') body = `<h2>Verify your identity</h2><p class="muted">Clients trust ${esc(cat.name.toLowerCase())} providers with their homes, families or journeys, so Worklay checks your documents before anyone can book you. You can finish setting up now; bookings open as soon as we’ve approved them.</p>${verificationPanel(u, cat)}`;
   return `<div class="container onboarding"><div class="ob-head"><h1>Set up your service profile</h1>
     <ol class="stepper">${steps.map(([n, l], i) => `<li class="${n === step ? 'active' : steps.findIndex(x => x[0] === step) > i ? 'done' : ''}"><button type="button" data-action="ob-step" data-step="${n}"><span>${i + 1}</span>${l}</button></li>`).join('')}</ol></div>
-    ${step === '4' /* holds its own upload forms, and forms can't be nested */ ? `<div class="card card-pad" id="ob-form" data-step="4">${body}</div>` : `<form class="card card-pad" id="ob-form" data-step="${step}" onsubmit="return false">${body}</form>`}
+    ${step === '4' /* holds its own upload forms, and forms can't be nested */ ? `<div class="card card-pad" id="ob-form" data-step="4">${body}</div>` : `<form class="card card-pad" id="ob-form" data-step="${step}">${body}</form>`}
     <div class="ob-nav">${step !== '1' ? '<button class="btn btn-outline" data-action="ob-back">← Back</button>' : '<span></span>'}
       ${last ? '<button class="btn btn-primary" data-action="ob-finish">Finish and publish</button>' : '<button class="btn btn-primary" data-action="ob-next">Save and continue →</button>'}</div></div>`;
 };
@@ -1306,8 +1316,11 @@ function adminVerifications() {
 
 /* ---------- router ---------- */
 const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+// The page address: a real path (/freelancers?cat=x), or a hash for old links (/#/freelancers).
+const currentPath = () => (location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname + location.search);
+const toPath = h => '/' + String(h).replace(/^#?\/?/, '');
 function parseHash() {
-  const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
+  const [path, qs] = currentPath().replace(/^\/?/, '').split('?');
   const parts = path.split('/').filter(Boolean);
   return { name: parts[0] || '', args: parts.slice(1), q: Object.fromEntries(new URLSearchParams(qs || '')) };
 }
@@ -1321,15 +1334,39 @@ function render() {
     console.error(err);
     $('#app').innerHTML = `<div class="container">${empty('⚠️', 'Something went wrong showing this page.', '<a class="btn btn-primary" href="#/">Go to homepage</a>')}</div>`;
   }
-  document.querySelectorAll('.mainnav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + name));
-  $('#mainnav').classList.remove('open');
+  document.querySelectorAll('.mainnav a').forEach(a => { const on = a.getAttribute('href') === '/' + name; a.classList.toggle('active', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
+  const h1 = $('#app h1');
+  document.title = name && h1 ? `${h1.textContent.trim()} | Worklay` : 'Worklay – Find work. Get work done.';
+  $('#mainnav').classList.remove('open'); $('#burger').setAttribute('aria-expanded', 'false');
   const cb = $('#chat-body'); if (cb) cb.scrollTop = cb.scrollHeight;
 }
 let lastRoute = '';
-window.addEventListener('hashchange', () => { const r = location.hash.split('?')[0]; render(); if (r !== lastRoute) window.scrollTo(0, 0); lastRoute = r; });
+// After moving to another page: scroll to the top and put keyboard/screen reader focus on the content.
+function afterRouteChange() {
+  const r = currentPath().split('?')[0];
+  if (r !== lastRoute) { window.scrollTo(0, 0); const main = $('#app'); main && main.focus({ preventScroll: true }); }
+  lastRoute = r;
+}
+window.addEventListener('hashchange', () => { render(); afterRouteChange(); });
+window.addEventListener('popstate', () => { render(); afterRouteChange(); });
+function navigate(h, { replace = false } = {}) {
+  history[replace ? 'replaceState' : 'pushState'](null, '', toPath(h));
+  render(); afterRouteChange();
+}
+// In-app links: open without reloading the page. Modified clicks (new tab etc.) keep browser behaviour.
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.target === '_blank' || a.hasAttribute('download')) return;
+  const href = a.getAttribute('href');
+  if (href.startsWith('#/')) { e.preventDefault(); navigate(href); return; }
+  if (href.startsWith('/') && !href.startsWith('//') && !href.startsWith('/api')) {
+    const first = href.slice(1).split(/[/?#]/)[0];
+    if (first === '' || ROUTES[first]) { e.preventDefault(); navigate(href); }
+  }
+});
 
 /* ---------- actions (event delegation) ---------- */
-const go = h => { location.hash = h; };
+const go = h => navigate(h);
 function setQuery(patch) {
   const { name, args, q } = parseHash(); const nq = { ...q, ...patch };
   Object.keys(nq).forEach(k => (nq[k] === '' || nq[k] == null) && delete nq[k]);
@@ -1357,6 +1394,7 @@ const A = {
     renderCookieBanner();
   },
   'cookie-settings': () => openCookieSettings(),
+  reload: () => location.reload(),
   'cookie-accept': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, true]))),
   'cookie-reject': () => saveConsent({}),
   login: () => openLogin(),
@@ -1377,7 +1415,7 @@ const A = {
   'auth-tab': el => openAuth(el.dataset.mode),
   'close-modal': () => closeModal(),
   'close-modal-bg': (el, e) => { if (e.target === el) closeModal(); },
-  'toggle-dd': () => $('#userdd').classList.toggle('open'),
+  'toggle-dd': () => { const dd = $('#userdd'), open = dd.classList.toggle('open'); dd.querySelector('[data-action="toggle-dd"]').setAttribute('aria-expanded', String(open)); },
   chip: el => go('#/services?q=' + encodeURIComponent(el.dataset.q)),
   nav: el => go(el.dataset.href),
   'pkg-tab': el => setQuery({ pkg: el.dataset.idx }),
@@ -1485,18 +1523,66 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
+    const picker = $('#language-picker'), dd = $('#userdd'), nav = $('#mainnav');
+    if (picker && picker.classList.contains('open')) { picker.classList.remove('open'); const t = picker.querySelector('.language-toggle'); t.setAttribute('aria-expanded', 'false'); t.focus(); return; }
+    if (dd && dd.classList.contains('open')) { dd.classList.remove('open'); const t = dd.querySelector('[data-action="toggle-dd"]'); t.setAttribute('aria-expanded', 'false'); t.focus(); return; }
+    if (nav && nav.classList.contains('open')) { nav.classList.remove('open'); const b = $('#burger'); b.setAttribute('aria-expanded', 'false'); b.focus(); return; }
     closeModal();
-    const picker = $('#language-picker');
-    if (picker) {
-      picker.classList.remove('open');
-      picker.querySelector('.language-toggle').setAttribute('aria-expanded', 'false');
-    }
+    return;
+  }
+  const box = $('#modal-root .modal');
+  if (e.key === 'Tab' && box) { // keep focus inside the open dialog
+    const items = [...box.querySelectorAll(FOCUSABLE)].filter(x => x.offsetParent !== null);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (!box.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    return;
+  }
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) { // move between menu items
+    const menu = e.target.closest && e.target.closest('#language-picker.open, #userdd.open');
+    if (!menu) return;
+    const items = [...menu.querySelectorAll('.language-option, .dropdown-menu a, .dropdown-menu button')];
+    if (!items.length) return;
+    e.preventDefault();
+    const i = items.indexOf(document.activeElement);
+    const next = e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+    items[next].focus();
   }
 });
+
+/* ---------- Accessibility touch-ups for every piece of HTML the app inserts ----------
+   - in-app links get real addresses (/freelancers instead of #/freelancers)
+   - a form label without "for" is tied to the input, select or textarea in the same field */
+let labelSeq = 0;
+function enhance(root) {
+  if (!root.querySelectorAll) return;
+  root.querySelectorAll('a[href^="#/"]').forEach(a => a.setAttribute('href', toPath(a.getAttribute('href'))));
+  root.querySelectorAll('.field > label:not([for]), .field label:not([for]):first-child').forEach(l => {
+    if (l.querySelector('input,select,textarea')) return; // wraps its control already
+    const field = l.closest('.field'); if (!field) return;
+    const ctl = [...field.querySelectorAll('input:not([type=hidden]):not([type=checkbox]):not([type=radio]),select,textarea')].find(c => !c.closest('label'))
+      || field.querySelector('input[type=checkbox],input[type=radio]');
+    if (!ctl) return;
+    if (ctl.type === 'checkbox' || ctl.type === 'radio') { // a group of choices: name the group instead
+      const group = l.nextElementSibling; if (!group) return;
+      l.id = l.id || `lbl-${++labelSeq}`; group.setAttribute('role', 'group'); group.setAttribute('aria-labelledby', l.id); return;
+    }
+    ctl.id = ctl.id || `fld-${++labelSeq}`; l.htmlFor = ctl.id;
+  });
+}
+new MutationObserver(list => {
+  const roots = new Set();
+  for (const m of list) if ([...m.addedNodes].some(n => n.nodeType === 1)) roots.add(m.target);
+  roots.forEach(enhance);
+}).observe(document.body, { childList: true, subtree: true });
+enhance(document.body); // the page shell drawn before this script loaded
 
 /* ---------- forms ---------- */
 document.addEventListener('submit', e => {
   const form = e.target, f = new FormData(form), id = form.id;
+  if (id === 'ob-form') { e.preventDefault(); return; } // onboarding steps are saved with their own buttons
   if (form.classList.contains('doc-form')) { e.preventDefault(); const file = f.get('doc');
     if (!file || !file.size) return toast('Please choose a file.', 'error');
     if (file.size > 5 * 1024 * 1024) return toast('The file is too large (max 5 MB).', 'error');
@@ -1530,12 +1616,12 @@ document.documentElement.lang = lang;
 renderCookieBanner();
 tickClock();
 { const c = readConsent(); if (c) { activateConsentedScripts(c); window.dispatchEvent(new CustomEvent('worklay:consent', { detail: { ...c } })); } }
-$('#burger').onclick = () => $('#mainnav').classList.toggle('open');
+$('#burger').onclick = () => $('#burger').setAttribute('aria-expanded', String($('#mainnav').classList.toggle('open')));
 $('#year').textContent = new Date().getFullYear();
-lastRoute = location.hash.split('?')[0];
+lastRoute = currentPath().split('?')[0];
 $('#app').innerHTML = `<div class="container" style="padding-top:40px" aria-busy="true"><div class="skeleton" style="height:56px;max-width:520px;margin-bottom:16px"></div><div class="skeleton" style="height:22px;max-width:380px;margin-bottom:36px"></div><div class="grid">${'<div class="skeleton" style="height:230px"></div>'.repeat(4)}</div></div>`;
 refresh().then(() => { render(); handleGoogleReturn(); }, err => {
-  $('#app').innerHTML = `<div class="container">${empty('⚠️', esc(err.message), '<button class="btn btn-primary" onclick="location.reload()">Try again</button>')}</div>`;
+  $('#app').innerHTML = `<div class="container">${empty('⚠️', esc(err.message), '<button class="btn btn-primary" data-action="reload">Try again</button>')}</div>`;
 });
 
 // Check for new messages and notifications every 20 seconds while the tab is open.

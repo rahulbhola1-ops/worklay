@@ -9,12 +9,48 @@ import { migrateToLatest } from './db/migrate.mjs';
 import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
 import { createMailer } from './mail.mjs';
+import { createSeo } from './seo.mjs';
 import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load settings such as DATABASE_URL and GOOGLE_CLIENT_ID from a local .env file if there is one.
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch (e) { /* no .env file */ }
 const app = express();
+app.disable('x-powered-by');
+
+/* ---------- Security headers ----------
+   CSP: scripts only from this site (no inline scripts or eval); inline style attributes are allowed
+   because the interface uses them. Images may come from any https host (profile photos on R2).
+   Stripe Checkout and Google sign-in are full-page redirects, so they need no CSP entries. */
+app.use((req, res, next) => {
+  const https = isHttps(req);
+  res.setHeader('Content-Security-Policy', [
+    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob: https:",
+    "font-src 'self' data:", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'",
+    ...(https ? ['upgrade-insecure-requests'] : []),
+  ].join('; '));
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+/* ---------- Rate limiting for sign-in and sign-up (in memory, per server process) ---------- */
+const attempts = new Map(); // key -> { count, resetAt }
+function clientIp(req) {
+  // Behind Cloudflare / a reverse proxy the real address is in these headers.
+  return String(req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0] || req.socket.remoteAddress || '').trim();
+}
+function tooManyAttempts(key, max, windowMs) {
+  const now = Date.now(), a = attempts.get(key);
+  if (!a || a.resetAt < now) { attempts.set(key, { count: 1, resetAt: now + windowMs }); return false; }
+  a.count += 1;
+  return a.count > max;
+}
+setInterval(() => { const now = Date.now(); for (const [k, a] of attempts) if (a.resetAt < now) attempts.delete(k); }, 10 * 60_000).unref();
 
 // PostgreSQL through Kysely. Pending migrations run on start unless MIGRATE_ON_START=false
 // (Kysely takes a lock, so several servers starting at once is safe).
@@ -166,8 +202,9 @@ async function me(req) {
   return (await db.selectFrom('wl_sessions as s').innerJoin('wl_users as u', 'u.id', 's.user_id').selectAll('u')
     .where('s.token_hash', '=', tokenHash(token)).where('s.expires_at', '>', sql`now()`).executeTakeFirst()) || null;
 }
+const SECURE_COOKIES = String(process.env.PUBLIC_URL || '').startsWith('https://');
 function setAuth(res, token) {
-  res.append('Set-Cookie', `worklay_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}`);
+  res.append('Set-Cookie', `worklay_auth=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 86400}${SECURE_COOKIES ? '; Secure' : ''}`);
 }
 async function login(res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -316,6 +353,22 @@ app.get('/api/files/avatars/:uid/:file', async (req, res) => {
 app.all('/api', upload.single('doc'), async (req, res) => {
   const route = String(req.query.r || '');
   const data = req.method === 'POST' ? (req.body || {}) : {};
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex');
+  // Cross-site request forgery: changes must come from Worklay's own pages. Browsers always send
+  // Origin on cross-site POSTs; same-origin requests and non-browser clients may omit it.
+  if (req.method === 'POST' && req.headers.origin) {
+    let ok = false;
+    try { const o = new URL(req.headers.origin); ok = o.host === String(req.headers['x-forwarded-host'] || req.headers.host).split(',')[0].trim() || o.origin === publicOrigin(req); } catch { ok = false; }
+    if (!ok) return bad(res, 'Request blocked.', 403);
+  }
+  if (req.method === 'POST' && (route === 'auth/login' || route === 'auth/register')) {
+    const ip = clientIp(req), email = String(data.email || '').toLowerCase();
+    const limited = route === 'auth/login'
+      ? tooManyAttempts(`login:${ip}`, 30, 15 * 60_000) || tooManyAttempts(`login:${email}`, 10, 15 * 60_000)
+      : tooManyAttempts(`register:${ip}`, 10, 60 * 60_000);
+    if (limited) return bad(res, 'Too many attempts. Please wait a few minutes and try again.', 429);
+  }
   try {
     const user = await me(req);
     const requireLogin = () => { if (!user) bad(res, 'Please log in first.', 401); return user; };
@@ -375,7 +428,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'auth/logout': {
         const token = parseCookies(req).worklay_auth;
         if (token) await db.deleteFrom('wl_sessions').where('token_hash', '=', tokenHash(token)).execute();
-        res.setHeader('Set-Cookie', 'worklay_auth=; Path=/; HttpOnly; Max-Age=0');
+        res.setHeader('Set-Cookie', `worklay_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${SECURE_COOKIES ? '; Secure' : ''}`);
         return res.json({ ok: true });
       }
       case 'profile/update': {
@@ -838,9 +891,15 @@ async function mutateOrderStatus(res, u, data, status) {
 // Unknown API addresses get a 404 instead of the web page.
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
+// robots.txt, sitemap.xml and server-rendered public pages (see seo.mjs).
+const seo = createSeo({ db, categories, publicOrigin, cities: CITIES, indexHtmlPath: path.join(__dirname, 'dist', 'index.html') });
+app.get('/robots.txt', seo.robots);
+app.get('/sitemap.xml', (req, res, next) => seo.sitemap(req, res).catch(next));
+
 if (!process.argv.includes('--dev')) {
-  app.use(express.static(path.join(__dirname, 'dist')));
-  app.use((req, res) => res.sendFile(path.join(__dirname, 'dist', 'index.html')));
+  // index: false so "/" goes through the page renderer instead of the raw index.html.
+  app.use(express.static(path.join(__dirname, 'dist'), { index: false }));
+  app.get('/{*path}', (req, res, next) => seo.renderPage(req, res).catch(next));
 }
 
 const port = process.argv.includes('--dev') ? 3001 : Number(process.env.PORT || 5173);

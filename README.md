@@ -124,6 +124,50 @@ transactional API ([mail.mjs](mail.mjs)):
 Without them, emails are switched off and the server only logs what it would have sent. Sending
 never blocks or breaks sign-up; failures are logged.
 
+## Search engines, accessibility and security
+
+**Page addresses.** Pages have real addresses (`/freelancers`, `/user/12`, `/freelancers?cat=tutoring`).
+Old `/#/…` links still work. The app opens in-app links without reloading.
+
+**Server-rendered HTML** ([seo.mjs](seo.mjs)). In production, the server answers every page address
+with readable HTML inside `#root`, so crawlers and AI bots that don't run JavaScript still see the
+content and links. Each page gets its own `<title>`, description, canonical link and Open Graph tags,
+plus JSON-LD:
+
+| Page | Structured data |
+|---|---|
+| Every public page | `WebSite` (with site search) and `Organization` |
+| Freelancer profile (`/user/:id`) | `ProfilePage` with a `Person` |
+| Blog post | `BlogPosting` |
+
+Private pages (`/dashboard`, `/messages`, `/admin`, …), customer profiles and unknown addresses are
+`noindex`. Unknown addresses return 404.
+
+**Crawler files.** `/robots.txt` allows everything public and disallows `/api` and the private
+sections. `/sitemap.xml` lists the main pages, category pages, finished freelancer profiles,
+services and blog posts. Both use `PUBLIC_URL` for absolute addresses.
+
+In development (`npm run dev`), Vite serves the pages, so there is no server-rendered HTML. To check
+it locally, run `npm run build`, then `PORT=3012 node server.mjs`, and open `http://127.0.0.1:3012`.
+
+**Accessibility (WCAG 2.1 AA).** The fixes are built into the code, with no overlay scripts:
+- skip link, landmarks (`header`, `nav`, `main`, `footer`) and heading levels;
+- every form label is tied to its control;
+- dialogs keep focus inside, close with Escape and return focus to the opener;
+- the language and account menus work with the arrow keys;
+- icon-only links have names, focus rings are visible, and focus moves to the content on page change;
+- text colours meet 4.5:1 contrast, and animations are reduced when the system asks for it.
+
+**Security.** The server sends `Content-Security-Policy` (scripts only from this site), `X-Frame-Options`,
+`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`, and `Strict-Transport-Security` on
+HTTPS. It also has these protections:
+- the API refuses cross-site POSTs (Origin check);
+- sign-in is limited to 10 tries per email and 30 per IP every 15 minutes, and sign-up to 10 per IP
+  per hour;
+- the session cookie is `Secure` when `PUBLIC_URL` is https.
+
+Access control is done on the server for every API call. `robots.txt` is not a security measure.
+
 ## Local services: categories, onboarding and bookings
 
 **Categories** live in the database (`wl_categories`, `wl_subcategories`, seeded by migration
