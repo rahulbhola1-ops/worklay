@@ -507,6 +507,7 @@ function handleGoogleReturn() {
   history.replaceState(null, '', '/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
 }
 const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">${t('auth.show')}</button></div>`;
+const authButtons = () => `<button class="btn btn-login" data-action="login">${ICON_USER}<span>${t('cta.login')}</span></button> <button class="btn btn-join" data-action="signup">${t('cta.signup')}${ICON_ARROW}</button>`;
 function openAuth(mode = 'login', intent = 'hire') {
   const err = '<p class="auth-err" role="alert" style="color:#d92d50;min-height:1.2em;margin:0 0 8px;font-size:.9rem"></p>';
   modal(`<div style="text-align:center;margin-bottom:18px"><svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#3858FF"/><path d="M7 10l4 13 5-9 5 9 4-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -518,7 +519,7 @@ function openAuth(mode = 'login', intent = 'hire') {
     ${mode === 'login' ? `<form id="login-form">
       <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'current-password')}</div>
-      ${err}<button class="btn btn-primary btn-block">${t('cta.login')}</button>
+      ${err}<button class="btn btn-join btn-block">${t('cta.login')}${ICON_ARROW}</button>
       <p class="small muted" style="text-align:center">${t('auth.noAccount')} <a href="#" data-action="auth-tab" data-mode="signup">${t('cta.signup')}</a></p></form>`
     : `<form id="signup-form">
       <div class="field"><label>${t('auth.iWant')}</label><div class="row">
@@ -532,7 +533,7 @@ function openAuth(mode = 'login', intent = 'hire') {
       <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'new-password', `minlength="8" placeholder="${esc(t('auth.pwPh'))}"`)}</div>
       <label class="filter-opt small"><input type="checkbox" name="terms" required> ${t('auth.terms').replace('{terms}', `<a href="#/terms" data-action="close-modal">${t('legal.terms')}</a>`).replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</label>
-      ${err}<button class="btn btn-primary btn-block">${t('auth.create')}</button>
+      ${err}<button class="btn btn-join btn-block">${t('auth.create')}${ICON_ARROW}</button>
       <p class="small muted" style="text-align:center">${t('auth.haveAccount')} <a href="#" data-action="auth-tab" data-mode="login">${t('cta.login')}</a></p></form>`}`, m => {
     const errEl = $('.auth-err', m);
     const lf = $('#login-form', m), sf = $('#signup-form', m);
@@ -612,13 +613,15 @@ function openPayout() {
 }
 
 /* ---------- header ---------- */
+const ICON_USER = '<svg class="btn-ico" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg>';
+const ICON_ARROW = '<svg class="btn-ico btn-arrow" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 function renderHeader() {
   const u = me(), el = $('#topbar-actions');
   document.querySelectorAll('[data-i18n]').forEach(n => { n.textContent = t(n.dataset.i18n); });
   const tabbar = $('#tabbar');
   document.body.classList.toggle('has-tabbar', !!u);
   if (!u) {
-    el.innerHTML = `${languagePicker()}<button class="btn btn-ghost" data-action="login">${t('cta.login')}</button><button class="btn btn-primary btn-sm" data-action="signup">${t('cta.signup')}</button>`;
+    el.innerHTML = `${languagePicker()}<button class="btn btn-login" data-action="login" aria-label="${t('cta.login')}">${ICON_USER}<span>${t('cta.login')}</span></button><button class="btn btn-join" data-action="signup">${t('cta.signup')}${ICON_ARROW}</button>`;
     if (tabbar) tabbar.innerHTML = '';
     return;
   }
@@ -973,7 +976,7 @@ V.user = ([id]) => {
 };
 
 V.postProject = () => {
-  if (!me()) return `<div class="container">${empty('🔐', 'Sign in to post a project.', `<button class="btn btn-primary" data-action="login">${t('cta.login')}</button> <button class="btn btn-outline" data-action="signup">${t('cta.signup')}</button>`)}</div>`;
+  if (!me()) return `<div class="container">${empty('🔐', 'Sign in to post a project.', `${authButtons()}`)}</div>`;
   return `<div class="page-head"><div class="container"><h1>${t('cta.post')}</h1><p>Tell professionals what you need. They'll get in touch with proposals.</p></div></div>
   <div class="container" style="max-width:760px;padding-top:30px"><form class="card card-pad" id="project-form">
     <div class="field"><label>Project title</label><input name="title" required maxlength="100" placeholder="e.g. Design a logo for my bakery"></div>
@@ -987,7 +990,7 @@ V.postProject = () => {
 };
 
 V.postService = () => {
-  if (!me()) return `<div class="container">${empty('🔐', 'Sign in to offer a service.', `<button class="btn btn-primary" data-action="login">${t('cta.login')}</button> <button class="btn btn-outline" data-action="signup">${t('cta.signup')}</button>`)}</div>`;
+  if (!me()) return `<div class="container">${empty('🔐', 'Sign in to offer a service.', `${authButtons()}`)}</div>`;
   const defaults = [['Basic', 25, [1, 0, 0, 0]], ['Standard', 75, [1, 1, 0, 0]], ['Premium', 150, [1, 1, 1, 1]]];
   return `<div class="page-head"><div class="container"><h1>Offer a service</h1><p>Set your own price in up to three packages.</p></div></div>
   <div class="container" style="max-width:900px;padding-top:30px"><form class="card card-pad" id="service-form">
@@ -1007,7 +1010,7 @@ V.postService = () => {
 
 const DASH_TABS = [['overview', '🏠', 'Overview'], ['bookings', '📅', 'Bookings'], ['projects', '📋', 'My projects'], ['orders', '🛒', 'My orders'], ['selling', '💼', 'Selling'], ['proposals', '📨', 'My proposals'], ['earnings', '💶', 'Earnings & payouts'], ['verification', '🛡️', 'Verification'], ['settings', '⚙️', 'Profile settings']];
 V.dashboard = ([tab = 'overview']) => {
-  const u = me(); if (!u) return `<div class="container">${empty('🔐', 'Sign in to see your dashboard.', `<button class="btn btn-primary" data-action="login">${t('cta.login')}</button> <button class="btn btn-outline" data-action="signup">${t('cta.signup')}</button>`)}</div>`;
+  const u = me(); if (!u) return `<div class="container">${empty('🔐', 'Sign in to see your dashboard.', `${authButtons()}`)}</div>`;
   const st = userStats(u.id);
   const myProjects = db.projects.filter(p => p.ownerId === u.id);
   const myOrders = db.orders.filter(o => o.buyerId === u.id);
