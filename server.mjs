@@ -1015,7 +1015,8 @@ async function bootstrap(user) {
     wishlist: wishlist.map(w => ({ kind: w.kind, id: sid(w.item_id) })),
     follows: follows.map(f => sid(f.followee)),
     payouts: payouts.map(p => ({ id: sid(p.id), userId: sid(p.user_id), amount: p.amount, method: p.method, details: p.details, status: p.status, date: iso(p.created_at) })),
-    posts: posts.map(p => ({ id: sid(p.id), title: p.title, emoji: p.emoji, color: p.color, excerpt: p.excerpt, body: p.body, created: iso(p.created_at) })),
+    posts: posts.map(p => ({ id: sid(p.id), title: p.title, emoji: p.emoji, color: p.color, excerpt: p.excerpt, body: p.body, created: iso(p.created_at),
+      title_et: p.title_et, excerpt_et: p.excerpt_et, body_et: p.body_et, title_ru: p.title_ru, excerpt_ru: p.excerpt_ru, body_ru: p.body_ru })),
     payments: paymentList,
     bookings: bookings.map(b => ({
       id: sid(b.id), clientId: sid(b.client_id), freelancerId: sid(b.freelancer_id), categoryId: b.service_category_id,

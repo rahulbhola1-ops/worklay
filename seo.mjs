@@ -6,6 +6,7 @@
    links. In the browser, the app then takes over and draws the same page.
    Private pages (dashboard, messages, …) get a noindex header and no content. */
 import fs from 'node:fs';
+import { blogHtml } from './blog-text.mjs';
 
 const SITE_NAME = 'Worklay';
 const TAGLINE = 'Find work. Get work done.';
@@ -180,7 +181,7 @@ ${pk.length ? `<h2>Packages</h2><ul>${pk.map(p => `<li>${esc(p.name || p.tier ||
     const rows = await db.selectFrom('wl_posts').select(['id', 'title', 'excerpt']).orderBy('id', 'desc').execute();
     return {
       title: `Blog | ${SITE_NAME}`,
-      description: 'Tips for customers and freelancers using Worklay.',
+      description: 'News and tips for customers and freelancers using Worklay.',
       html: `<h1>Worklay Blog</h1>${rows.length ? `<ul>${rows.map(r => `<li><a href="/blog/${r.id}">${esc(r.title)}</a> — ${esc(r.excerpt)}</li>`).join('')}</ul>` : '<p>No posts yet.</p>'}`,
     };
   }
@@ -193,7 +194,7 @@ ${pk.length ? `<h2>Packages</h2><ul>${pk.map(p => `<li>${esc(p.name || p.tier ||
       description: clip(p.excerpt || p.body, 160),
       ogType: 'article',
       jsonLd: [{ '@context': 'https://schema.org', '@type': 'BlogPosting', headline: p.title, datePublished: new Date(p.created_at).toISOString(), url: `${origin}/blog/${p.id}`, publisher: { '@type': 'Organization', name: SITE_NAME } }],
-      html: `<article><h1>${esc(p.title)}</h1><p>${esc(p.excerpt)}</p><div>${esc(p.body)}</div></article>`,
+      html: `<article><h1>${esc(p.title)}</h1><p>${esc(p.excerpt)}</p>${blogHtml(p.body, esc)}</article>`,
     };
   }
 

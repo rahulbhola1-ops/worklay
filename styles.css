@@ -303,6 +303,7 @@ textarea{min-height:120px;resize:vertical}
 /* ---------- Blog / static ---------- */
 .prose{max-width:760px;margin:0 auto;padding:40px 20px;font-size:1.06rem}
 .prose p{color:var(--ink-2)}
+.blog-post h2{font-size:1.3rem;margin-top:34px}.blog-post li{color:var(--ink-2);margin-bottom:6px}.blog-cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
 .blog-cover{height:180px;display:grid;place-items:center;font-size:3.5rem}
 .about-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
 .step{background:#fff;border-radius:var(--radius);padding:28px;box-shadow:var(--shadow-sm);border:1px solid var(--line)}
