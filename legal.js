@@ -3,12 +3,12 @@
    in sync with what the site actually stores in the browser. */
 
 export const LEGAL = {
-  company: '[Company name OÜ]',
-  regCode: '[registry code]',
-  address: '[registered address], Estonia',
+  company: 'kewal OÜ',
+  regCode: '16436231',
+  address: 'Sõpruse pst 257-41, 13414 Tallinn, Estonia',
   email: 'support@worklay.com',
   hosting: '[hosting provider and country, e.g. Hetzner Online GmbH, Germany]',
-  updated: '2026-11-21',
+  updated: '2026-11-25',
 };
 
 /* Everything Worklay stores in the visitor's browser. `category` must match a consent
