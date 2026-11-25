@@ -33,7 +33,7 @@ const approvedCats = () => CATEGORIES.filter(c => c.status !== 'NEW');
 // What the current user can pick: approved categories, their own new ones, and the one they're in.
 const pickableCats = (current = '') => CATEGORIES.filter(c => c.status !== 'NEW' || c.id === current || (db && db.me && c.createdBy === db.me));
 const specialisms = u => [...(catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(catName), ...(u.customSubcategories || [])];
-let CATEGORY_ICONS = ['🧩'], TERMS_VERSION = '';
+let CATEGORY_ICONS = ['🧩'], APPROVAL_DAYS = 7, TERMS_VERSION = '';
 
 /* ---------- freelancer profile helpers: pricing, weekly hours, tutoring, documents ---------- */
 const WEEKDAYS = [['MON', 'Mon'], ['TUE', 'Tue'], ['WED', 'Wed'], ['THU', 'Thu'], ['FRI', 'Fri'], ['SAT', 'Sat'], ['SUN', 'Sun']];
@@ -352,7 +352,7 @@ async function refresh() {
   db = await api('bootstrap');
   if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments;
     if (db.config.categories) CATEGORIES = db.config.categories.map(c => ({ ...c, ico: c.icon }));
-    if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; CATEGORY_ICONS = db.config.categoryIcons || CATEGORY_ICONS; TERMS_VERSION = db.config.termsVersion || ''; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
+    if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; CATEGORY_ICONS = db.config.categoryIcons || CATEGORY_ICONS; TERMS_VERSION = db.config.termsVersion || ''; APPROVAL_DAYS = db.config.approvalDays || APPROVAL_DAYS; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -553,7 +553,7 @@ function openAuth(mode = 'login', intent = 'hire') {
 // Asks a logged-in user to accept the current Terms of Service.
 function openTerms() {
   modal(`<h2>Our Terms of Service were updated</h2>
-    <ul class="muted"><li>The client pays up front and Worklay holds the money until the work is done.</li><li>When the client approves the work, the freelancer is paid automatically.</li><li>Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs, taken from the freelancer’s share.</li></ul>
+    <ul class="muted"><li>The client pays up front and Worklay holds the money until the work is done.</li><li>When the client approves the work, the freelancer is paid automatically.</li><li>If the client doesn’t approve finished work or report a problem within ${APPROVAL_DAYS} days, the freelancer is paid automatically.</li><li>If the client reports a problem with proof and Worklay accepts it, the client is refunded. Worklay decides within ${APPROVAL_DAYS} days.</li><li>Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs, taken from the freelancer’s share.</li></ul>
     <p><a href="/terms" target="_blank" rel="noopener">Read the full ${t('legal.terms')}</a></p>
     <button class="btn btn-primary btn-block" data-action="terms-accept">I agree to the Terms of Service</button>`);
 }
@@ -1132,8 +1132,8 @@ V.admin = ([sub] = []) => {
     <div class="kpis"><div class="kpi"><div class="muted small">Users</div><div class="v">${db.users.length}</div></div><div class="kpi"><div class="muted small">Services</div><div class="v">${db.services.length}</div></div><div class="kpi"><div class="muted small">Projects</div><div class="v">${db.projects.length}</div></div><div class="kpi"><div class="muted small">Gross volume</div><div class="v">${money(gmv)}</div></div></div>
     <div class="card card-pad" style="margin-bottom:20px"><div class="list-item" style="padding:0;border:0"><div><h3 style="margin:0">Verification queue</h3><div class="small muted">${pending.length} document${pending.length === 1 ? '' : 's'} from ${new Set(pending.map(d => d.userId)).size} freelancer${new Set(pending.map(d => d.userId)).size === 1 ? '' : 's'} waiting for review</div></div><a class="btn btn-primary btn-sm" href="#/admin/verifications">Open queue</a></div></div>
     <div class="card card-pad" style="margin-bottom:20px"><div class="list-item" style="padding:0;border:0"><div><h3 style="margin:0">Categories</h3><div class="small muted">${CATEGORIES.filter(c => c.status === 'NEW').length} new from freelancers, waiting for a look</div></div><a class="btn btn-primary btn-sm" href="#/admin/categories">Open categories</a></div></div>
-    ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Held payments can be released or refunded here. Reported problems come first.</p>
-      ${(db.payments || []).length ? [...db.payments].sort((a, b) => (b.problem && b.status === 'paid' ? 1 : 0) - (a.problem && a.status === 'paid' ? 1 : 0)).slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : p.kind === 'booking' ? 'Booking' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div>${p.problem ? `<div class="small" style="margin-top:4px"><span class="tag orange">Problem</span> ${esc((user(p.problem.by) || {}).name || '')}: ${esc(p.problem.reason)}</div>` : ''}</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${money(p.amount)}</b>${statusTag(p.status)}${p.status === 'paid' ? `<button class="btn btn-outline btn-sm" data-action="pay-refund" data-id="${p.id}">Refund client</button><button class="btn btn-primary btn-sm" data-action="pay-release" data-id="${p.id}">Pay freelancer</button>` : ''}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
+    ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Held payments can be released or refunded here. Reported problems come first. Work marked as done pays the freelancer automatically after ${APPROVAL_DAYS} days unless someone reports a problem.</p>
+      ${(db.payments || []).length ? [...db.payments].sort((a, b) => (b.problem && b.status === 'paid' ? 1 : 0) - (a.problem && a.status === 'paid' ? 1 : 0)).slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : p.kind === 'booking' ? 'Booking' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div>${p.problem ? `<div class="small" style="margin-top:4px"><span class="tag orange">Problem</span> ${esc((user(p.problem.by) || {}).name || '')}: ${esc(p.problem.reason)}<div>${proofLinks(p)}${p.status === 'paid' ? ` ${p.problem.proofs.length ? '·' : 'No proof yet ·'} <b${new Date(p.problem.decideBy) < new Date() ? ' style="color:#d92d50"' : ''}>${new Date(p.problem.decideBy) < new Date() ? 'Overdue: decide now' : 'Decide by ' + fmtTime(p.problem.decideBy)}</b>` : ''}</div></div>` : ''}</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${money(p.amount)}</b>${statusTag(p.status)}${p.status === 'paid' ? `<button class="btn btn-outline btn-sm" data-action="pay-refund" data-id="${p.id}">Refund client</button><button class="btn btn-primary btn-sm" data-action="pay-release" data-id="${p.id}">Pay freelancer</button>` : ''}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
     <div class="card card-pad" style="margin-bottom:20px"><h3>Payout requests (${pays.length})</h3>
       ${pays.length ? pays.map(p => `<div class="list-item"><div><b>${esc(user(p.userId).name)}</b> — ${money(p.amount)} via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div><button class="btn btn-primary btn-sm" data-action="mark-paid" data-id="${p.id}">Mark as paid</button></div>`).join('') : '<p class="muted">No pending payouts.</p>'}</div>
     <div class="card card-pad"><h3>Contact form messages (${db.contacts.length})</h3>${db.contacts.length ? db.contacts.map(c => `<div class="list-item"><div><b>${esc(c.name)}</b> <span class="muted small">${esc(c.email)} · ${ago(c.date)}</span><p style="margin:4px 0 0">${esc(c.message)}</p></div></div>`).join('') : '<p class="muted">No messages.</p>'}</div></div>`;
@@ -1323,13 +1323,29 @@ function payNote(kind, id) {
   const seller = p.sellerId === u.id, party = seller || p.buyerId === u.id;
   const text = { paid: `🔒 ${money(p.amount)} is held by Worklay until the work is done${seller ? `. You’ll receive ${money(p.net)}` : ''}.`, released: seller ? `${money(p.net)} was released to you and is waiting for <a href="#/dashboard/earnings">payout setup</a> or the transfer.` : 'Payment released to the freelancer.',
     transferring: 'Payment is being sent to the freelancer.', transferred: seller ? `✓ ${money(p.net)} was sent to your Stripe account.` : '✓ Payment sent to the freelancer.', refunding: 'The payment is being refunded.', refunded: 'The payment was refunded.' }[p.status] || '';
-  const problem = p.status !== 'paid' || !party ? '' : p.problem ? ' <span class="tag orange">Problem reported: Worklay is looking at it</span>' : ` <button type="button" class="link-btn" data-action="pay-problem" data-id="${p.id}">Report a problem</button>`;
-  return text ? `<div class="small muted pay-note">${text}${problem}</div>` : '';
+  const done = p.status === 'paid' && p.autoRelease && !p.problem && deliveredAt(kind, id);
+  const by = done && fmtTime(+new Date(done) + APPROVAL_DAYS * 864e5);
+  const due = !done ? '' : seller ? ` You’re paid automatically on ${by} unless the client reports a problem.` : ` Approve it or report a problem by ${by}; after that the freelancer is paid automatically.`;
+  const problem = p.status !== 'paid' || !party ? '' : p.problem
+    ? `<div style="margin-top:4px"><span class="tag orange">Problem reported</span> Worklay decides by ${fmtTime(p.problem.decideBy)}. ${proofLinks(p)} <button type="button" class="link-btn" data-action="pay-proof" data-id="${p.id}">Add proof</button></div>`
+    : ` <button type="button" class="link-btn" data-action="pay-problem" data-id="${p.id}">Report a problem</button>`;
+  return text ? `<div class="small muted pay-note">${text}${due}${problem}</div>` : '';
 }
+const deliveredAt = (kind, id) => ((kind === 'order' ? db.orders : kind === 'project' ? db.projects : db.bookings).find(x => x.id === id) || {}).deliveredAt;
+const fmtTime = d => new Date(d).toLocaleString(numberLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Tallinn' });
+const proofLinks = p => p.problem.proofs.map((x, i) => x.hasFile ? `<a href="${apiUrl('payment/proof-file', '&id=' + x.id)}" target="_blank" rel="noopener">📎 ${x.by === p.buyerId ? 'Client' : 'Freelancer'} proof ${i + 1}</a>` : `<span>📎 proof ${i + 1} (deleted)</span>`).join(' · ');
+const PROOF_INPUT = required => `<div class="field"><label>${required ? 'Proof: photo, screenshot or PDF (max 5 MB)' : 'Proof, if you have it: photo, screenshot or PDF (max 5 MB)'}</label><input type="file" name="doc" accept="image/jpeg,image/png,image/webp,application/pdf" ${required ? 'required' : ''}></div>`;
 function openProblem(id) {
-  modal(`<h2>Report a problem</h2><p class="muted">The money stays held. Worklay will look at what happened and contact you both if needed.</p>
+  const p = (db.payments || []).find(x => x.id === id), client = p && p.buyerId === me().id;
+  modal(`<h2>Report a problem</h2><p class="muted">The money stays held and the automatic payment stops. Worklay looks at what happened and decides within ${APPROVAL_DAYS} days. ${client ? 'If your proof shows the work wasn’t done as agreed, you’re refunded.' : ''} The other side can see what you send.</p>
     <form id="problem-form" data-id="${esc(id)}"><div class="field"><label>What went wrong?</label><textarea name="reason" required minlength="10" maxlength="1000" placeholder="e.g. The work wasn’t finished, or the other person doesn’t reply."></textarea></div>
+    ${PROOF_INPUT(client)}
     <p class="auth-err" role="alert" style="color:#d92d50;margin:0 0 8px;font-size:.9rem"></p><button class="btn btn-primary btn-block">Send to Worklay</button></form>`);
+}
+function openProof(id) {
+  modal(`<h2>Add proof</h2><p class="muted">Worklay and the other side can see the file. You can add up to 5 files.</p>
+    <form id="proof-form" data-id="${esc(id)}">${PROOF_INPUT(true)}
+    <p class="auth-err" role="alert" style="color:#d92d50;margin:0 0 8px;font-size:.9rem"></p><button class="btn btn-primary btn-block">Add proof</button></form>`);
 }
 
 /* ---------- bookings dashboard tab ---------- */
@@ -1386,7 +1402,7 @@ function adminCategories() {
 }
 
 /* ---------- router ---------- */
-const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, terms: () => termsPage(lang, { fee: PLATFORM_FEE }), privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, terms: () => termsPage(lang, { fee: PLATFORM_FEE, days: APPROVAL_DAYS }), privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
 // The page address: a real path (/freelancers?cat=x), or a hash for old links (/#/freelancers).
 const currentPath = () => (location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname + location.search);
 const toPath = h => '/' + String(h).replace(/^#?\/?/, '');
@@ -1537,8 +1553,9 @@ const A = {
   'project-deliver': el => { if (confirm('Is the work finished? The client will be asked to check it and release the payment.')) act('project/deliver', { id: el.dataset.id }, 'Marked as done ✓ The client has been asked to approve.'); },
   'bk-deliver': el => { if (confirm('Is the work finished? The client will be asked to approve it.')) act('booking/deliver', { id: el.dataset.id }, 'Marked as done ✓ The client has been asked to approve.'); },
   'pay-problem': el => openProblem(el.dataset.id),
+  'pay-proof': el => openProof(el.dataset.id),
   'pay-release': el => { const note = prompt('Pay the freelancer? Optional note for both sides:', ''); if (note !== null) act('admin/payment-resolve', { id: el.dataset.id, action: 'release', note }, 'Payment released to the freelancer.'); },
-  'pay-refund': el => { const note = prompt('Refund the client? Optional note for both sides:', ''); if (note !== null) act('admin/payment-resolve', { id: el.dataset.id, action: 'refund', note }, 'Client refunded.'); },
+  'pay-refund': el => { const p = db.payments.find(x => x.id === el.dataset.id), proof = p && p.problem && p.problem.proofs.some(x => x.by === p.buyerId); const note = prompt(`${proof ? '' : 'Note: the client hasn’t sent any proof.\n\n'}Refund the client? Optional note for both sides:`, ''); if (note !== null) act('admin/payment-resolve', { id: el.dataset.id, action: 'refund', note }, 'Client refunded.'); },
   // admin categories
   'cat-merge': el => { const sel = el.closest('.cat-row').querySelector('[name="mergeTarget"]'); if (!sel.value) return toast('Choose a category to merge into.', 'error');
     if (confirm('Move everyone to the chosen category and remove this one?')) act('admin/category', { id: el.dataset.id, action: 'merge', target: sel.value }, 'Categories merged.'); },
@@ -1670,6 +1687,13 @@ new MutationObserver(list => {
 enhance(document.body); // the page shell drawn before this script loaded
 
 /* ---------- forms ---------- */
+function sendProof(form, f, route, done) {
+  const errEl = form.querySelector('.auth-err'), file = f.get('doc');
+  if (file && file.size > 5 * 1024 * 1024) { errEl.textContent = 'The file is too large (max 5 MB).'; return; }
+  if (!file || !file.size) f.delete('doc');
+  f.set('id', form.dataset.id);
+  act(route, f, null, { errEl, after: () => { closeModal(); render(); toast(done, 'success'); } });
+}
 document.addEventListener('submit', e => {
   const form = e.target, f = new FormData(form), id = form.id;
   if (id === 'ob-form') { e.preventDefault(); return; } // onboarding steps are saved with their own buttons
@@ -1679,7 +1703,8 @@ document.addEventListener('submit', e => {
     act('verification/document', f, 'Document uploaded ✓ We’ll review it soon.'); return; }
   if (form.classList.contains('cat-row')) { e.preventDefault(); act('admin/category', { id: form.dataset.id, action: 'save', name: f.get('name'), nameEt: f.get('nameEt'), nameRu: f.get('nameRu'), requiresVerification: !!f.get('requiresVerification') }, 'Category saved ✓'); return; }
   const handlers = {
-    'problem-form': () => act('payment/problem', { id: form.dataset.id, reason: f.get('reason') }, null, { errEl: form.querySelector('.auth-err'), after: () => { closeModal(); render(); toast('Thanks. Worklay will look at it.', 'success'); } }),
+    'problem-form': () => sendProof(form, f, 'payment/problem', 'Thanks. Worklay will look at it.'),
+    'proof-form': () => sendProof(form, f, 'payment/proof', 'Proof added ✓'),
     'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
     filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), sub: f.getAll('sub').filter(id => f.getAll('cat').some(c => (catById(c).subcategories || []).some(x => x.id === id))).join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };

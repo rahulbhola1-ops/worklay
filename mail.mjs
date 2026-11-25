@@ -1,4 +1,5 @@
-/* Transactional email through Brevo (https://www.brevo.com), used for the welcome email.
+/* Transactional email through Brevo (https://www.brevo.com), used for the welcome email and for
+   reminders about finished work.
 
    Needs BREVO_API_KEY (Brevo → SMTP & API → API keys) and MAIL_FROM_EMAIL, an address on a sender
    or domain verified in Brevo (Brevo → Senders, domains & dedicated IPs). MAIL_FROM_NAME defaults
@@ -59,5 +60,23 @@ export function createMailer() {
       .catch(e => console.error('[mail] welcome email failed:', e.message));
   }
 
-  return { enabled, send, sendWelcome };
+  // Short message with one button, e.g. "please check the finished work". Never throws.
+  function sendNote(user, { subject, line, link, label }, origin) {
+    const first = String(user.name || '').trim().split(/\s+/)[0] || 'there', url = `${origin}/${link}`;
+    const text = `Hi ${first},\n\n${line}\n\n${url}\n\nThe Worklay team`;
+    const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2933">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0"><tr><td align="center">
+<table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:12px;padding:32px">
+<tr><td>
+<h1 style="margin:0 0 16px;font-size:22px">${escapeHtml(subject)}</h1>
+<p style="margin:0 0 16px;font-size:15px;line-height:1.5">Hi ${escapeHtml(first)},<br><br>${escapeHtml(line)}</p>
+<p style="margin:24px 0"><a href="${escapeHtml(url)}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold">${escapeHtml(label)}</a></p>
+<p style="margin:0;font-size:14px;line-height:1.5;color:#52606d">The Worklay team</p>
+</td></tr></table>
+</td></tr></table>
+</body></html>`;
+    return send({ to: user.email, name: user.name, subject, html, text, tags: ['payment'] }).catch(e => console.error('[mail] note failed:', e.message));
+  }
+
+  return { enabled, send, sendWelcome, sendNote };
 }

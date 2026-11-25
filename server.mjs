@@ -10,7 +10,7 @@ import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
 import { createMailer } from './mail.mjs';
 import { createSeo } from './seo.mjs';
-import { TERMS_VERSION } from './terms.mjs';
+import { TERMS_VERSION, APPROVAL_DAYS } from './terms.mjs';
 import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -59,15 +59,26 @@ const db = createDb();
 if (process.env.MIGRATE_ON_START !== 'false') await migrateToLatest(db);
 
 // Card payments through Stripe Connect; disabled (manual payouts) without STRIPE_SECRET_KEY.
-const payments = createPayments({ db, notify, publicOrigin });
+const payments = createPayments({ db, notify, publicOrigin, email: emailUser });
 const MIN_PAYOUT = 20;
 // Profile photos in Cloudflare R2; uploads are switched off without R2 keys.
 const storage = createStorage();
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 // Welcome emails through Brevo; switched off (logged only) without BREVO_API_KEY.
 const mailer = createMailer();
-// Finish interrupted transfers and refunds, and retry failed ones.
-const retryPayments = () => payments.retryStuck().catch(e => console.error('Payment retry failed', e.message));
+async function emailUser(id, note) {
+  const u = await db.selectFrom('wl_users').select(['name', 'email']).where('id', '=', id).executeTakeFirst();
+  if (u) mailer.sendNote(u, note, (process.env.PUBLIC_URL || 'https://worklay.com').replace(/\/+$/, '')); // not awaited: a slow email must not hold up the page
+}
+// Pay for work nobody objected to, then finish interrupted transfers and refunds and retry failed ones.
+let paymentJob = false;
+async function retryPayments() {
+  if (paymentJob) return;
+  paymentJob = true;
+  try { await payments.autoRelease(); await payments.retryStuck(); }
+  catch (e) { console.error('Payment job failed', e.message); }
+  finally { paymentJob = false; }
+}
 if (payments.enabled) { setTimeout(retryPayments, 30_000).unref(); setInterval(retryPayments, 10 * 60_000).unref(); }
 const netOf = amount => Math.round(Number(amount) * (1 - PLATFORM_FEE) * 100) / 100;
 
@@ -209,6 +220,11 @@ async function settle(ref, sellerId, amount) {
   await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(amount)}` }).where('id', '=', sellerId).execute();
   return true;
 }
+
+// Documents and proof: real photos or PDFs, judged by their contents.
+const detectFile = buf => detectImage(buf) || (buf.subarray(0, 5).toString('latin1') === '%PDF-' ? { type: 'application/pdf' } : null);
+const MAX_PROOFS = 5; // per person and payment
+const addProof = (ex, paymentId, userId, file, kind) => ex.insertInto('wl_payment_proofs').values({ payment_id: paymentId, user_id: userId, file_name: String(file.originalname || '').slice(0, 120), mime: kind.type, data: file.buffer }).execute();
 
 /* ---------- Bookings ---------- */
 const ACTIVE_BOOKING = ['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'];
@@ -421,6 +437,18 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       res.setHeader('Cache-Control', 'private, no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       return res.send(doc.data);
+    }
+    // Proof attached to a reported problem: only the two sides of the payment and admins may see it.
+    if (req.method === 'GET' && route === 'payment/proof-file') {
+      const u = requireLogin(); if (!u) return;
+      const x = await db.selectFrom('wl_payment_proofs as x').innerJoin('wl_payments as p', 'p.id', 'x.payment_id').select(['x.mime', 'x.data', 'x.file_name', 'p.buyer_id', 'p.seller_id']).where('x.id', '=', Number(req.query.id) || 0).executeTakeFirst();
+      if (!x || (u.role !== 'admin' && u.id !== x.buyer_id && u.id !== x.seller_id)) return bad(res, 'File not found.', 404);
+      if (!x.data) return bad(res, 'This file is no longer stored.', 404);
+      res.setHeader('Content-Type', x.mime);
+      res.setHeader('Content-Disposition', `inline; filename="${String(x.file_name).replace(/[^\w.-]/g, '_') || 'proof'}"`);
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(x.data);
     }
     // Bookable start times for one freelancer on one date.
     if (req.method === 'GET' && route === 'slots') {
@@ -700,7 +728,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (!pr || pr.awarded_to !== u.id) return bad(res, 'Project not found.', 404);
         const r = await db.updateTable('wl_projects').set({ delivered_at: sql`now()` }).where('id', '=', pr.id).where('status', '=', 'awarded').where('delivered_at', 'is', null).executeTakeFirst();
         if (!changed(r)) return bad(res, 'This project can’t be marked as done.');
-        await notify(pr.owner_id, 'project', `${u.name} marked “${pr.title}” as done. Please check the work and release the payment.`, `#/project/${pr.id}`);
+        await notify(pr.owner_id, 'project', `${u.name} marked “${pr.title}” as done. Please check the work and release the payment.${await payments.delivered({ projectId: pr.id })}`, `#/project/${pr.id}`);
         return res.json({ ok: true });
       }
       case 'booking/deliver': {
@@ -710,22 +738,47 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as done once it has started.');
         const r = await db.updateTable('wl_bookings').set({ delivered_at: sql`now()`, updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').where('delivered_at', 'is', null).executeTakeFirst();
         if (!changed(r)) return bad(res, 'This booking can’t be marked as done.');
-        await notify(b.client_id, 'booking', `${u.name} marked your booking on ${b.booking_date} as done. Please approve it to release the payment.`, '#/dashboard/bookings');
+        await notify(b.client_id, 'booking', `${u.name} marked your booking on ${b.booking_date} as done. Please approve it to release the payment.${await payments.delivered({ bookingId: b.id })}`, '#/dashboard/bookings');
         return res.json({ ok: true });
       }
-      // Either side asks Worklay to look at a payment that is still held.
+      // Either side asks Worklay to look at a payment that is still held. Clients must attach proof;
+      // the automatic payment stops until an admin decides.
       case 'payment/problem': {
         const u = requireLogin(); if (!u) return;
         const reason = String(data.reason || '').trim().slice(0, 1000);
         if (reason.length < 10) return bad(res, 'Please describe the problem in a sentence or two.');
         const pay = await payments.getPayment(Number(data.id) || 0);
         if (!pay || (pay.buyer_id !== u.id && pay.seller_id !== u.id)) return bad(res, 'Payment not found.', 404);
-        const r = await db.updateTable('wl_payments').set({ problem_reason: reason, problem_by: u.id, problem_at: sql`now()` }).where('id', '=', pay.id).where('status', '=', 'paid').where('problem_at', 'is', null).executeTakeFirst();
-        if (!changed(r)) return bad(res, pay.problem_at ? 'A problem has already been reported for this payment.' : 'This payment is no longer held.');
+        const proof = req.file ? detectFile(req.file.buffer) : null;
+        if (req.file && !proof) return bad(res, 'Please upload a photo (JPG, PNG, WebP) or a PDF.');
+        if (!proof && pay.buyer_id === u.id) return bad(res, 'Please add proof, such as a photo or a screenshot of your messages.');
+        const saved = await db.transaction().execute(async trx => {
+          const r = await trx.updateTable('wl_payments').set({ problem_reason: reason, problem_by: u.id, problem_at: sql`now()` }).where('id', '=', pay.id).where('status', '=', 'paid').where('problem_at', 'is', null).executeTakeFirst();
+          if (changed(r) && proof) await addProof(trx, pay.id, u.id, req.file, proof);
+          return changed(r);
+        });
+        if (!saved) return bad(res, pay.problem_at ? 'A problem has already been reported for this payment.' : 'This payment is no longer held.');
         const other = pay.buyer_id === u.id ? pay.seller_id : pay.buyer_id;
-        await notify(other, 'payment', `${u.name} reported a problem with a payment of €${pay.amount}. Worklay will look at it; the money stays held meanwhile.`, '#/dashboard');
-        for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${pay.id}: ${u.name} reported a problem.`, '#/admin');
+        await notify(other, 'payment', `${u.name} reported a problem with a payment of €${pay.amount}. The money stays held and Worklay decides within ${APPROVAL_DAYS} days. You can add your own proof.`, '#/dashboard');
+        for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${pay.id}: ${u.name} reported a problem. Please decide within ${APPROVAL_DAYS} days.`, '#/admin');
         return res.json({ ok: true });
+      }
+      // More proof for a reported problem, from either side.
+      case 'payment/proof': {
+        const u = requireLogin(); if (!u) return;
+        if (!req.file) return bad(res, 'Please choose a file.');
+        const kind = detectFile(req.file.buffer);
+        if (!kind) return bad(res, 'Please upload a photo (JPG, PNG, WebP) or a PDF.');
+        const error = await db.transaction().execute(async trx => {
+          const pay = await trx.selectFrom('wl_payments').selectAll().where('id', '=', Number(data.id) || 0).forUpdate().executeTakeFirst(); // the lock keeps the limit exact
+          if (!pay || (pay.buyer_id !== u.id && pay.seller_id !== u.id)) return 'Payment not found.';
+          if (!pay.problem_at || pay.status !== 'paid') return 'Proof can only be added while Worklay is looking at a problem.';
+          const { n } = await trx.selectFrom('wl_payment_proofs').select(sql`count(*)::int`.as('n')).where('payment_id', '=', pay.id).where('user_id', '=', u.id).executeTakeFirstOrThrow();
+          if (n >= MAX_PROOFS) return `You can add up to ${MAX_PROOFS} files.`;
+          await addProof(trx, pay.id, u.id, req.file, kind);
+          return null;
+        });
+        return error ? bad(res, error) : res.json({ ok: true });
       }
       // An admin decides a held payment: pay the freelancer or refund the client.
       case 'admin/payment-resolve': {
@@ -761,7 +814,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         const type = String(data.documentType || '');
         if (!DOC_TYPES.includes(type)) return bad(res, 'Please choose the document type.');
         if (!req.file) return bad(res, 'Please choose a file.');
-        const kind = detectImage(req.file.buffer) || (req.file.buffer.subarray(0, 5).toString('latin1') === '%PDF-' ? { type: 'application/pdf' } : null);
+        const kind = detectFile(req.file.buffer);
         if (!kind) return bad(res, 'Please upload a photo (JPG, PNG, WebP) or a PDF.');
         await db.insertInto('wl_verification_documents').values({ user_id: u.id, document_type: type, file_name: String(req.file.originalname || '').slice(0, 120), mime: kind.type, data: req.file.buffer }).execute();
         await recomputeVerification(u.id);
@@ -958,7 +1011,7 @@ async function bootstrap(user) {
       awardedAmount: p.awarded_amount, deliveredAt: p.delivered_at && (p.owner_id === mid || p.awarded_to === mid) ? iso(p.delivered_at) : null, proposalCount: p.proposal_count, created: iso(p.created_at),
     })),
     proposals: proposals.map(p => ({ id: sid(p.id), projectId: sid(p.project_id), sellerId: sid(p.seller_id), amount: p.amount, days: p.days, cover: p.cover, status: p.status, created: iso(p.created_at) })),
-    orders: orders.map(o => ({ id: sid(o.id), serviceId: sid(o.service_id), pkg: o.pkg, buyerId: sid(o.buyer_id), sellerId: sid(o.seller_id), price: o.price, status: o.status, created: iso(o.created_at) })),
+    orders: orders.map(o => ({ id: sid(o.id), serviceId: sid(o.service_id), pkg: o.pkg, buyerId: sid(o.buyer_id), sellerId: sid(o.seller_id), price: o.price, status: o.status, deliveredAt: iso(o.delivered_at), created: iso(o.created_at) })),
     reviews: reviews.map(r => ({ id: sid(r.id), targetUser: sid(r.target_user), from: sid(r.from_user), serviceId: sid(r.service_id), orderId: sid(r.order_id), projectId: sid(r.project_id), rating: r.rating, text: r.text, date: iso(r.created_at) })),
     messages: messages.map(m => ({ id: sid(m.id), from: sid(m.from_id), to: sid(m.to_id), text: m.text, read: m.is_read, date: iso(m.created_at) })),
     notifications: notifications.map(n => ({ id: sid(n.id), userId: sid(n.user_id), type: n.type, text: n.text, link: n.link, read: n.is_read, date: iso(n.created_at) })),
@@ -975,7 +1028,7 @@ async function bootstrap(user) {
     contacts: contacts.map(c => ({ id: sid(c.id), name: c.name, email: c.email, message: c.message, date: iso(c.created_at) })),
     myDocuments: myDocuments.map(d => ({ id: sid(d.id), type: d.document_type, status: d.status, reason: d.reason, uploaded: iso(d.uploaded_at) })),
     pendingDocuments: pendingDocuments.map(d => ({ id: sid(d.id), userId: sid(d.user_id), type: d.document_type, fileName: d.file_name, mime: d.mime, uploaded: iso(d.uploaded_at), hasFile: d.has_file })),
-    config: { categories: categoryList, categoryIcons: CATEGORY_ICONS, termsVersion: TERMS_VERSION, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
+    config: { categories: categoryList, categoryIcons: CATEGORY_ICONS, termsVersion: TERMS_VERSION, approvalDays: APPROVAL_DAYS, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
   };
 }
 
@@ -1047,8 +1100,8 @@ async function mutateOrderStatus(res, u, data, status) {
   if (status === 'completed' && o.buyer_id !== u.id) return bad(res, 'Buyer only.', 403);
   const from = status === 'delivered' ? ['in_queue'] : ['in_queue', 'delivered'];
   if (!from.includes(o.status)) return bad(res, 'This order can’t be changed any more.');
-  if (!changed(await db.updateTable('wl_orders').set({ status }).where('id', '=', o.id).where('status', 'in', from).executeTakeFirst())) return res.json({ ok: true });
-  if (status === 'delivered') await notify(o.buyer_id, 'order', 'Your order was delivered. Please review and approve it.', '#/dashboard/orders');
+  if (!changed(await db.updateTable('wl_orders').set({ status, ...(status === 'delivered' ? { delivered_at: sql`now()` } : {}) }).where('id', '=', o.id).where('status', 'in', from).executeTakeFirst())) return res.json({ ok: true });
+  if (status === 'delivered') await notify(o.buyer_id, 'order', `Your order was delivered. Please review and approve it.${await payments.delivered({ orderId: o.id })}`, '#/dashboard/orders');
   if (status === 'completed') {
     if (await settle({ orderId: o.id }, o.seller_id, o.price)) await notify(o.seller_id, 'payment', 'The buyer approved your delivery and released the payment.', '#/dashboard/earnings');
   }

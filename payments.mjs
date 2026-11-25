@@ -3,7 +3,8 @@
    How money moves ("separate charges and transfers"):
    1. A customer buys a service or awards a project and pays the full price by card on a
       Stripe Checkout page. The money lands in Worklay's Stripe balance.
-   2. When the customer approves the work, the payment is "released": the freelancer's
+   2. When the customer approves the work (or APPROVAL_DAYS pass after the freelancer marked it as
+      done and nobody reported a problem), the payment is "released": the freelancer's
       share (price minus the platform fee) is transferred to their Stripe account,
       and Stripe pays it out to their bank automatically.
    3. If the freelancer hasn't finished Stripe onboarding yet, released money waits in
@@ -21,14 +22,23 @@
 import Stripe from 'stripe';
 import crypto from 'node:crypto';
 import { sql, changed } from './db/index.mjs';
+import { APPROVAL_DAYS } from './terms.mjs';
 
 export const PLATFORM_FEE = 0.10;
 const CHECKOUT_MINUTES = 30; // Stripe's minimum session lifetime
 const cents = eur => Math.round(Number(eur) * 100);
 const round2 = n => Math.round(n * 100) / 100;
 const iso = v => (v ? new Date(v).toISOString() : null);
+const HOUR = 3600_000, REMIND_DAYS = 2; // reminders go out this many days before a deadline
+const hoursAgo = h => sql`now() - make_interval(hours => ${h}::int)`;
+// The job behind each kind of payment: table, id column on wl_payments, status while it's delivered, status when finished.
+const JOBS = {
+  order: { table: 'wl_orders', column: 'order_id', open: 'delivered', done: 'completed', link: '#/dashboard/orders' },
+  project: { table: 'wl_projects', column: 'project_id', open: 'awarded', done: 'completed', link: '#/dashboard/projects' },
+  booking: { table: 'wl_bookings', column: 'booking_id', open: 'CONFIRMED', done: 'COMPLETED', link: '#/dashboard/bookings' },
+};
 
-export function createPayments({ db, notify, publicOrigin }) {
+export function createPayments({ db, notify, publicOrigin, email = async () => {} }) {
   const secret = process.env.STRIPE_SECRET_KEY || '';
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
   const stripe = secret ? new Stripe(secret) : null;
@@ -42,7 +52,7 @@ export function createPayments({ db, notify, publicOrigin }) {
   async function startCheckout(req, { kind, buyer, sellerId, amount, title, orderId = null, projectId = null, proposalId = null, bookingId = null }) {
     const fee = round2(amount * PLATFORM_FEE);
     const { id: pid } = await db.insertInto('wl_payments')
-      .values({ kind, order_id: orderId, project_id: projectId, proposal_id: proposalId, booking_id: bookingId, buyer_id: buyer.id, seller_id: sellerId, amount, fee })
+      .values({ kind, order_id: orderId, project_id: projectId, proposal_id: proposalId, booking_id: bookingId, buyer_id: buyer.id, seller_id: sellerId, amount, fee, auto_release: true }) // the buyer has accepted the current Terms
       .returning('id').executeTakeFirstOrThrow();
     const origin = publicOrigin(req);
     try {
@@ -151,12 +161,11 @@ export function createPayments({ db, notify, publicOrigin }) {
   }
 
   // ---- releasing money to freelancers ----
-  const refColumn = { order: 'order_id', project: 'project_id', booking: 'booking_id' };
   const refOf = ({ orderId = null, projectId = null, bookingId = null }) => {
     const kind = orderId ? 'order' : bookingId ? 'booking' : 'project';
     return [kind, orderId ?? bookingId ?? projectId];
   };
-  const paymentsFor = ref => { const [kind, id] = refOf(ref); return db.selectFrom('wl_payments').selectAll().where('kind', '=', kind).where(refColumn[kind], '=', id); };
+  const paymentsFor = ref => { const [kind, id] = refOf(ref); return db.selectFrom('wl_payments').selectAll().where('kind', '=', kind).where(JOBS[kind].column, '=', id); };
   const paidPaymentFor = ref => paymentsFor(ref).where('status', '=', 'paid').executeTakeFirst();
   // Was this job paid through Stripe at all (whatever happened to the money since)?
   const hasPayment = async ref => !!(await paymentsFor(ref).where('status', 'not in', ['pending', 'cancelled']).executeTakeFirst());
@@ -166,14 +175,83 @@ export function createPayments({ db, notify, publicOrigin }) {
   async function release(ref) {
     const p = await paidPaymentFor(ref);
     if (!p) return false;
-    const released = await db.transaction().execute(async trx => {
-      const r = await trx.updateTable('wl_payments').set({ status: 'released', released_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'paid').executeTakeFirst();
-      if (!changed(r)) return false;
-      await trx.updateTable('wl_users').set({ balance: sql`balance + ${net(p)}` }).where('id', '=', p.seller_id).execute();
-      return true;
-    });
-    if (released) transferPending(p.seller_id).catch(e => console.error('Transfer failed for user', p.seller_id, e.message));
+    const released = await db.transaction().execute(trx => releaseIn(trx, p));
+    if (released) sendSoon(p.seller_id);
     return released;
+  }
+  // unlessProblem: an automatic release must lose against a problem reported at the same moment.
+  async function releaseIn(trx, p, { unlessProblem = false } = {}) {
+    let q = trx.updateTable('wl_payments').set({ status: 'released', released_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'paid');
+    if (unlessProblem) q = q.where('problem_at', 'is', null);
+    if (!changed(await q.executeTakeFirst())) return false;
+    await trx.updateTable('wl_users').set({ balance: sql`balance + ${net(p)}` }).where('id', '=', p.seller_id).execute();
+    return true;
+  }
+  const sendSoon = userId => transferPending(userId).catch(e => console.error('Transfer failed for user', userId, e.message));
+
+  /* ---- automatic payment ----
+     Held payments whose job was marked as done at least `hours` ago, with no problem reported. Only
+     payments made under the Terms that promise this (auto_release). */
+  const silentFor = (kind, hours) => {
+    const j = JOBS[kind];
+    return db.selectFrom('wl_payments as p').innerJoin(`${j.table} as j`, 'j.id', `p.${j.column}`).selectAll('p').select('j.delivered_at')
+      .where('p.kind', '=', kind).where('p.status', '=', 'paid').where('p.auto_release', '=', true).where('p.problem_at', 'is', null)
+      .where('j.status', '=', j.open).where('j.delivered_at', '<=', hoursAgo(hours));
+  };
+  async function autoRelease() {
+    for (const kind of Object.keys(JOBS)) {
+      const j = JOBS[kind];
+      for (const p of await silentFor(kind, APPROVAL_DAYS * 24).execute()) {
+        try {
+          // Job and payment change together or not at all, whatever the client does meanwhile.
+          const done = await db.transaction().execute(async trx => {
+            if (!(await releaseIn(trx, p, { unlessProblem: true }))) return false;
+            const r = await trx.updateTable(j.table).set({ status: j.done }).where('id', '=', p[j.column]).where('status', '=', j.open).where('delivered_at', '<=', hoursAgo(APPROVAL_DAYS * 24)).executeTakeFirst();
+            if (!changed(r)) throw Object.assign(new Error('job changed'), { skip: true });
+            await notify(p.seller_id, 'payment', `The client didn’t respond within ${APPROVAL_DAYS} days, so your payment of €${net(p)} was released automatically.`, '#/dashboard/earnings', trx);
+            await notify(p.buyer_id, 'payment', `€${p.amount} was released to the freelancer because you didn’t approve the work or report a problem within ${APPROVAL_DAYS} days.`, j.link, trx);
+            return true;
+          });
+          if (done) sendSoon(p.seller_id);
+        } catch (e) { if (!e.skip) console.error('Automatic release failed', p.id, e.message); }
+      }
+      // Remind the client once, shortly before the deadline.
+      for (const p of await silentFor(kind, (APPROVAL_DAYS - REMIND_DAYS) * 24).where('p.reminded_at', 'is', null).execute()) {
+        const claimed = await db.updateTable('wl_payments').set({ reminded_at: sql`now()` }).where('id', '=', p.id).where('reminded_at', 'is', null).where('status', '=', 'paid').executeTakeFirst();
+        if (!changed(claimed)) continue;
+        const by = new Date(new Date(p.delivered_at).getTime() + APPROVAL_DAYS * 24 * HOUR);
+        await askApproval(p, by, true);
+      }
+    }
+    // Reported problems that Worklay should decide soon.
+    const due = await db.selectFrom('wl_payments').selectAll().where('status', '=', 'paid').where('problem_reminded_at', 'is', null)
+      .where('problem_at', '<=', hoursAgo((APPROVAL_DAYS - REMIND_DAYS) * 24)).execute();
+    for (const p of due) {
+      if (!changed(await db.updateTable('wl_payments').set({ problem_reminded_at: sql`now()` }).where('id', '=', p.id).where('problem_reminded_at', 'is', null).executeTakeFirst())) continue;
+      for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${p.id}: please decide the reported problem by ${day(deadline(p.problem_at))}.`, '#/admin');
+    }
+    // Proof files aren't needed long after the decision; the record that there was one stays.
+    await db.updateTable('wl_payment_proofs').set({ data: null }).where('data', 'is not', null).where('uploaded_at', '<', sql`now() - interval '6 months'`)
+      .where('payment_id', 'in', db.selectFrom('wl_payments').select('id').where('status', 'in', ['transferred', 'refunded'])).execute();
+  }
+  const deadline = from => new Date(new Date(from).getTime() + APPROVAL_DAYS * 24 * HOUR);
+  const day = d => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Tallinn' }).format(d);
+
+  // Tells the client (on the site and by email) that finished work waits for them. No deadline is
+  // mentioned for payments without automatic release.
+  async function askApproval(p, by, reminder = false) {
+    const link = JOBS[p.kind].link, seller = await db.selectFrom('wl_users').select('name').where('id', '=', p.seller_id).executeTakeFirst();
+    const rule = p.auto_release ? ` If you don’t approve it or report a problem by ${day(by)}, the payment of €${p.amount} goes to the freelancer automatically.` : '';
+    if (reminder) await notify(p.buyer_id, 'payment', `Reminder: ${seller?.name || 'The freelancer'} marked the work as done.${rule}`, link);
+    await email(p.buyer_id, { subject: reminder ? 'Reminder: please check the finished work' : 'Please check the finished work',
+      line: `${seller?.name || 'The freelancer'} marked the work as done. Please check it and approve it, or report a problem with proof.${rule}`, link, label: 'Check the work' });
+    return rule;
+  }
+  // Called when the freelancer marks a job as done: emails the client and returns the deadline
+  // sentence for the notification ('' if this job isn't paid through Stripe).
+  async function delivered(ref) {
+    const p = await paidPaymentFor(ref);
+    return p && !p.problem_at ? askApproval(p, deadline(new Date())) : '';
   }
 
   async function markTransferred(p, transferId) {
@@ -237,6 +315,13 @@ export function createPayments({ db, notify, publicOrigin }) {
       eb('p.project_id', 'in', eb.selectFrom('wl_projects').select('id').where('status', '=', 'cancelled')),
     ])).execute();
     for (const p of owed) await attempt(p, () => refund(p.id, 'the job was cancelled'));
+    // Approved, but the server stopped before the money was released.
+    const approved = await db.selectFrom('wl_payments as p').selectAll('p').where('p.status', '=', 'paid').where('p.problem_at', 'is', null).where(eb => eb.or([
+      eb('p.booking_id', 'in', eb.selectFrom('wl_bookings').select('id').where('status', '=', 'COMPLETED')),
+      eb('p.order_id', 'in', eb.selectFrom('wl_orders').select('id').where('status', '=', 'completed')),
+      eb('p.project_id', 'in', eb.selectFrom('wl_projects').select('id').where('status', '=', 'completed')),
+    ])).execute();
+    for (const p of approved) await attempt(p, () => db.transaction().execute(trx => releaseIn(trx, p, { unlessProblem: true })));
     const sellers = await db.selectFrom('wl_payments').select('seller_id').distinct().where('status', '=', 'released').execute();
     for (const { seller_id } of sellers) await transferPending(seller_id).catch(e => console.error('Transfer retry failed for user', seller_id, e.message));
   }
@@ -369,15 +454,20 @@ export function createPayments({ db, notify, publicOrigin }) {
   async function listFor(userId, admin) {
     let q = db.selectFrom('wl_payments').selectAll().orderBy('id', 'desc');
     q = admin ? q.limit(200) : q.where(eb => eb.or([eb('buyer_id', '=', userId), eb('seller_id', '=', userId)])).where('status', '<>', 'cancelled');
-    return (await q.execute()).map(p => ({
+    const rows = await q.execute();
+    const proofs = rows.some(p => p.problem_at) ? await db.selectFrom('wl_payment_proofs').select(['id', 'payment_id', 'user_id', 'file_name', 'uploaded_at', sql`data is not null`.as('has_file')])
+      .where('payment_id', 'in', rows.filter(p => p.problem_at).map(p => p.id)).orderBy('id').execute() : [];
+    return rows.map(p => ({
       id: String(p.id), kind: p.kind, orderId: p.order_id ? String(p.order_id) : null, projectId: p.project_id ? String(p.project_id) : null, bookingId: p.booking_id ? String(p.booking_id) : null,
       buyerId: String(p.buyer_id), sellerId: String(p.seller_id), amount: p.amount, fee: p.fee, net: net(p), status: p.status, created: iso(p.created_at),
-      problem: p.problem_at ? { reason: p.problem_reason, by: p.problem_by ? String(p.problem_by) : null, at: iso(p.problem_at) } : null,
+      autoRelease: p.auto_release,
+      problem: p.problem_at ? { reason: p.problem_reason, by: p.problem_by ? String(p.problem_by) : null, at: iso(p.problem_at), decideBy: deadline(p.problem_at).toISOString(),
+        proofs: proofs.filter(x => x.payment_id === p.id).map(x => ({ id: String(x.id), by: String(x.user_id), name: x.file_name, at: iso(x.uploaded_at), hasFile: x.has_file })) } : null,
     }));
   }
 
   return {
-    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, refund, refundBooking, hasPayment, paidPaymentFor, retryStuck, transferPending, cleanupAbandoned,
+    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, refund, refundBooking, hasPayment, paidPaymentFor, retryStuck, autoRelease, delivered, transferPending, cleanupAbandoned,
     onboardingLink, refreshAccount, dashboardLink, registerRoutes, summary, listFor,
   };
 }

@@ -56,6 +56,7 @@ export function privacyPage(lang) {
       <li><b>Vabakutselise teenuseprofiil:</b> kategooria, hinnad, nädalane töögraafik, piirkonnad ja sõiduraadius; need on avalikud.</li>
       <li><b>Broneeringud:</b> kuupäev, kellaaeg, kestus, hind, aadress, kus töö tehakse, ja sinu märkused.</li>
       <li><b>Makse- ja väljamakseandmed:</b> tellimuste summad, maksete olek, saldo ja väljamaksed. Kaardimakseid töötleb Stripe: kaardiandmed sisestad Stripe’i lehel ja Worklay neid ei näe ega salvesta. Vabakutseliste isikusamasuse ja pangaandmed kogub väljamaksete seadistamisel Stripe.</li>
+      <li><b>Teatatud probleemid:</b> sinu kirjeldus ning fotod, kuvatõmmised või PDF-id, mille lisad tõendina, kui teatad makse probleemist.</li>
       <li><b>Kontaktivorm:</b> nimi, e-post, teema ja sõnum.</li>
       <li><b>Tehnilised andmed:</b> sisselogimisseansi küpsis ja keele-eelistus. Meie majutusteenuse pakkuja võib turvalisuse tagamiseks lühiajaliselt logida IP-aadresse.</li>
     </ul>
@@ -72,9 +73,9 @@ export function privacyPage(lang) {
     <h2>4. Kes sinu andmeid näeb</h2>
     <ul>
       <li><b>Kõik külastajad:</b> sinu avalik profiil (nimi, profiilipilt, ametinimetus, linn ja piirkond, tutvustus, oskused, hind, arvustused, kontrollitud märk) ning sinu postitatud projektid ja teenused. Sinu e-post ei ole avalik.</li>
-      <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi, tellimusi ja broneeringuid (sh aadressi ja märkusi) näevad ainult tehingu osapooled.</li>
-      <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
-      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte. Mõlemad töötlevad andmeid ainult meie juhiste järgi.</li>
+      <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi, tellimusi, broneeringuid (sh aadressi ja märkusi) ning teatatud probleeme koos tõenditega näevad ainult tehingu osapooled.</li>
+      <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, teatatud probleeme ja nende tõendeid, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
+      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte, ning Brevo (Sendinblue SAS, Prantsusmaa), kes saadab meie e-kirju ja saab selleks sinu nime, e-posti aadressi ja kirja sisu. Nad töötlevad andmeid ainult meie juhiste järgi.</li>
       <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Iirimaa) töötleb kaardimakseid, hoiab raha kuni töö kinnitamiseni, kontrollib vabakutseliste isikut ja teeb neile väljamakseid. Stripe on nende andmete osas iseseisev vastutav töötleja.</li>
       <li><b>Makseteenuse pakkujad:</b> PayPal, Payoneer või sinu pank saavad väljamakse tegemiseks vajalikud andmed ja töötlevad neid iseseisva vastutava töötlejana.</li>
@@ -87,6 +88,7 @@ export function privacyPage(lang) {
     <h2>6. Kui kaua me andmeid hoiame</h2>
     <ul>
       <li><b>Kontrollidokumentide failid:</b> kustutatakse kohe, kui administraator dokumendi kinnitab või tagasi lükkab. Alles jääb ainult kirje kontrolli kohta (dokumendi tüüp, tulemus ja kuupäevad).</li>
+      <li><b>Probleemide tõendifailid:</b> umbes 6 kuud pärast lisamist, kui makse kohta on otsus tehtud. Makse juurde jääb kirje, et tõend esitati.</li>
       <li><b>Konto, profiil ja sisu:</b> kuni sul on konto. Pärast konto sulgemist kustutame või anonüümime need 30 päeva jooksul, välja arvatud allpool nimetatu.</li>
       <li><b>Tehingu-, broneeringu- ja väljamakseandmed:</b> 7 aastat, nagu nõuab raamatupidamise seadus.</li>
       <li><b>Kontaktivormi sõnumid:</b> kuni 12 kuud.</li>
@@ -129,6 +131,7 @@ export function privacyPage(lang) {
       <li><b>Freelancer service profile:</b> category, prices, weekly working hours, areas and travel radius; these are public.</li>
       <li><b>Bookings:</b> date, time, duration, price, the address where the work happens, and your notes.</li>
       <li><b>Payment and payout data:</b> order amounts, payment status, your balance and payouts. Card payments are processed by Stripe: you enter your card details on Stripe’s page, and Worklay never sees or stores them. When freelancers set up payouts, Stripe collects their identity and bank details.</li>
+      <li><b>Reported problems:</b> what you write and the photos, screenshots or PDFs you attach as proof when you report a problem with a payment.</li>
       <li><b>Contact form:</b> name, email, subject and message.</li>
       <li><b>Technical data:</b> a login session cookie and your language preference. Our hosting provider may briefly log IP addresses for security.</li>
     </ul>
@@ -145,9 +148,9 @@ export function privacyPage(lang) {
     <h2>4. Who can see your data</h2>
     <ul>
       <li><b>Everyone:</b> your public profile (name, profile photo, headline, city and area, bio, skills, rate, reviews, verified badge) and the projects and services you post. Your email is not public.</li>
-      <li><b>Other members:</b> messages are visible only to the recipient; proposals, orders and bookings (including the address and notes) are visible only to the parties involved.</li>
-      <li><b>Worklay administrators:</b> see verification documents, payout requests and contact messages only to handle them.</li>
-      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos. Both process data only on our instructions.</li>
+      <li><b>Other members:</b> messages are visible only to the recipient; proposals, orders and bookings (including the address and notes), and reported problems with their proof, are visible only to the parties involved.</li>
+      <li><b>Worklay administrators:</b> see verification documents, reported problems and their proof, payout requests and contact messages only to handle them.</li>
+      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos, and Brevo (Sendinblue SAS, France), which sends our emails and receives your name, email address and the message for that. They process data only on our instructions.</li>
       <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Ireland) processes card payments, holds the money until the work is approved, verifies freelancers’ identity and pays them out. Stripe acts as an independent controller for this data.</li>
       <li><b>Payment providers:</b> PayPal, Payoneer or your bank receive the details needed to send a payout and handle them as independent controllers.</li>
@@ -160,6 +163,7 @@ export function privacyPage(lang) {
     <h2>6. How long we keep your data</h2>
     <ul>
       <li><b>Verification document files:</b> deleted as soon as an administrator approves or rejects the document. Only a record of the check is kept (document type, result and dates).</li>
+      <li><b>Proof files for reported problems:</b> about 6 months after you add them, once the payment has been decided. A record that there was proof is kept with the payment.</li>
       <li><b>Account, profile and content:</b> while you have an account. After you close it we delete or anonymise it within 30 days, except as listed below.</li>
       <li><b>Transaction, booking and payout records:</b> 7 years, as required by the Estonian Accounting Act.</li>
       <li><b>Contact form messages:</b> up to 12 months.</li>
