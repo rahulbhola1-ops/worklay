@@ -77,7 +77,7 @@ GitHub → **Actions** → **Deploy** → **Run workflow**. The log ends with `D
 | `STRIPE_WEBHOOK_SECRET` | signing secret of the live webhook endpoint `https://worklay.com/api/payments/webhook` |
 | `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | profile photo uploads to the Cloudflare R2 bucket (`R2_BUCKET`, default `worklay`); leave empty to switch uploads off |
 | `R2_PUBLIC_URL` | optional public custom domain of the bucket; empty = photos are served through the app |
-| `BREVO_API_KEY`, `MAIL_FROM_EMAIL` | welcome emails through Brevo; the sender address must be verified in Brevo; leave empty to switch emails off |
+| `BREVO_API_KEY`, `MAIL_FROM_EMAIL` | welcome and notification emails through Brevo; the sender address must be verified in Brevo; leave empty to switch emails off |
 | `MAIL_FROM_NAME` | sender name on emails, default `Worklay` |
 
 After changing `.env`, run `docker compose up -d` on the server (or re-run the Deploy action).
