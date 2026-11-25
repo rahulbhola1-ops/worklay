@@ -59,7 +59,7 @@ h1{font-weight:700} h2{font-weight:700} h3{font-weight:600}
 @keyframes pop{from{opacity:0;transform:translateY(-6px) scale(.98)}}
 
 /* ---------- Buttons & forms ---------- */
-.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 22px;border-radius:999px;border:2px solid transparent;font:600 .95rem Rubik,sans-serif;cursor:pointer;transition:transform .15s var(--ease),box-shadow .15s,background .15s,color .15s,border-color .15s;white-space:nowrap;line-height:1.2}
+.btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 22px;border-radius:999px;border:2px solid transparent;font:600 .95rem Rubik,system-ui,sans-serif;cursor:pointer;transition:transform .15s var(--ease),box-shadow .15s,background .15s,color .15s,border-color .15s;white-space:nowrap;line-height:1.2}
 .btn:active{transform:scale(.97)}
 .btn-primary{background:var(--brand);color:#fff;box-shadow:0 4px 14px rgba(56,88,255,.28)}
 .btn-primary:hover{background:var(--brand-dark);box-shadow:0 6px 20px rgba(56,88,255,.38);transform:translateY(-1px)}
@@ -93,7 +93,7 @@ textarea{min-height:120px;resize:vertical}
 .row3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .pw-wrap{position:relative}
 .pw-wrap input{padding-right:64px}
-.pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--brand);font:600 .8rem Rubik;cursor:pointer;padding:6px 8px;border-radius:8px}
+.pw-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--brand);font:600 .8rem Rubik,system-ui,sans-serif;cursor:pointer;padding:6px 8px;border-radius:8px}
 .pw-toggle:hover{background:var(--brand-soft)}
 .choice{display:flex;align-items:center;gap:10px;padding:14px;border:1.5px solid var(--line);border-radius:14px;cursor:pointer;font-weight:500;color:var(--ink);transition:.15s;margin:0}
 .choice:hover{border-color:#c9d0f5}
@@ -218,9 +218,9 @@ textarea{min-height:120px;resize:vertical}
 .af-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 8px 6px 14px;border-radius:999px;background:var(--brand-soft);color:var(--brand);font-size:.85rem;font-weight:500;border:0;cursor:pointer;font-family:inherit}
 .af-chip span{width:20px;height:20px;border-radius:50%;background:rgba(56,88,255,.15);display:grid;place-items:center;font-size:.8rem}
 .af-chip:hover span{background:var(--brand);color:#fff}
-.af-clear{background:none;border:0;color:var(--muted);cursor:pointer;font:500 .85rem Rubik;text-decoration:underline}
+.af-clear{background:none;border:0;color:var(--muted);cursor:pointer;font:500 .85rem Rubik,system-ui,sans-serif;text-decoration:underline}
 .tabs{display:flex;gap:4px;background:#eef0f7;padding:5px;border-radius:999px;width:max-content;max-width:100%;overflow-x:auto}
-.tabs button{border:0;background:none;padding:9px 18px;border-radius:999px;font:500 .9rem Rubik;cursor:pointer;color:var(--ink-2);white-space:nowrap;transition:.15s}
+.tabs button{border:0;background:none;padding:9px 18px;border-radius:999px;font:500 .9rem Rubik,system-ui,sans-serif;cursor:pointer;color:var(--ink-2);white-space:nowrap;transition:.15s}
 .tabs button:hover{color:var(--ink)}
 .tabs button.active{background:#fff;color:var(--brand);box-shadow:0 2px 8px rgba(0,0,0,.07)}
 
@@ -566,3 +566,45 @@ main:focus{outline:none} /* focused programmatically after navigation; not a con
 .pay-note{margin-top:4px}
 .link-btn{border:0;background:none;padding:0;font:inherit;color:var(--brand);text-decoration:underline;cursor:pointer}
 .terms-bar{margin-top:16px}
+
+/* Log in and Sign up */
+.btn-login{background:#fff;color:var(--brand);border-color:#cfd7ff;box-shadow:0 1px 3px rgba(56,88,255,.08)}
+.btn-login:hover{background:var(--brand-soft);border-color:var(--brand);transform:translateY(-1px);box-shadow:0 6px 16px rgba(56,88,255,.16)}
+.btn-join{overflow:hidden;border:0;padding:13px 24px;color:#fff;background:linear-gradient(120deg,var(--brand),var(--brand-2) 55%,#7a45f5);background-size:150% 100%;background-position:0 0;box-shadow:0 6px 18px rgba(86,80,255,.34);transition:transform .15s var(--ease),box-shadow .2s,background-position .45s var(--ease)}
+.btn-join:hover{background-position:100% 0;transform:translateY(-1px);box-shadow:0 10px 26px rgba(86,80,255,.45)}
+.btn-join::before{content:"";position:absolute;inset:0;transform:translateX(-120%);background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.32) 50%,transparent 65%);transition:transform .65s var(--ease);pointer-events:none}
+.btn-join:hover::before{transform:translateX(120%)}
+.btn-login:focus-visible,.btn-join:focus-visible{outline:3px solid #ffb703;outline-offset:2px}
+.btn-ico{flex-shrink:0}
+.btn-arrow{transition:transform .2s var(--ease)}
+.btn-join:hover .btn-arrow{transform:translateX(4px)}
+.btn-login.loading::after{border-color:var(--brand) var(--brand) var(--brand) transparent}
+.topbar-actions .btn-login,.topbar-actions .btn-join{height:42px;padding:0 18px;font-size:.92rem}
+/* The links only fit next to the buttons on wide screens; below that they open from the menu button. */
+@media (max-width:1140px){
+  .burger{display:grid;place-items:center}
+  .topbar-inner{justify-content:space-between;gap:10px}
+  .mainnav{display:none;position:absolute;top:70px;left:0;right:0;background:#fff;flex-direction:column;padding:12px 16px 18px;border-bottom:1px solid var(--line);gap:2px;box-shadow:var(--shadow)}
+  .mainnav.open{display:flex}
+  .mainnav a{padding:12px}
+  .topbar-actions{margin-left:auto}
+}
+@media (max-width:760px){.mainnav{top:64px}}
+/* Phones: everything in the header must fit next to the menu button. */
+@media (max-width:760px){
+  .topbar-actions .language-toggle span:not(.language-chevron){display:none}
+  .topbar-actions .btn-login,.topbar-actions .btn-join{height:40px;padding:0 14px;font-size:.86rem}
+}
+@media (max-width:560px){
+  .topbar-inner{gap:6px}
+  .topbar-actions .btn-login{width:40px;padding:0}
+  .topbar-actions .btn-login span{display:none}
+  .topbar-actions .btn-join .btn-arrow{display:none}
+}
+@media (max-width:420px){
+  .topbar .logo span{display:none}
+}
+@media (max-width:360px){
+  .topbar-inner{padding:0 12px}
+  .topbar-actions .language-chevron{display:none}
+}
