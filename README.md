@@ -93,10 +93,19 @@ bank. Without Stripe keys the site keeps the manual payout flow.
 5. Restart the server. Test cards: `4242 4242 4242 4242`, any future date, any CVC.
 
 **When the work is done**: the freelancer clicks **Work is done** (project, order or booking). No
-money moves until the client approves; approval sends the freelancer's share automatically. Either
-side can **Report a problem** while the money is held, and an admin then decides at `/admin` (**Pay
-freelancer** or **Refund client**). There is no automatic release if the client never answers.
-Transfers and refunds that were interrupted are retried every 10 minutes, after asking Stripe
+money moves until the client approves; approval sends the freelancer's share automatically.
+
+- **Client silent for 7 days** (`APPROVAL_DAYS` in `terms.mjs`): the work counts as approved and the
+  freelancer is paid. The client gets the deadline on the site and by email when the work is marked as
+  done, and one reminder 2 days before. Only for card payments made under the Terms that say so
+  (`wl_payments.auto_release`); older payments keep waiting for the client or an admin.
+- **Report a problem**: stops the automatic payment. Clients must attach proof (photo, screenshot or
+  PDF); both sides can add up to 5 files and see each other's. An admin decides at `/admin` within 7
+  days (**Pay freelancer** or **Refund client**) and is reminded 2 days before; nothing is decided
+  automatically. Proof is stored in `wl_payment_proofs` and deleted after 6 months once decided.
+
+The payment job runs every 10 minutes: it makes the automatic payments, sends reminders and retries.
+Transfers and refunds that were interrupted are retried after asking Stripe
 whether they already went through. Card disputes (chargebacks) are handled in the Stripe dashboard.
 
 ## Terms of Service
