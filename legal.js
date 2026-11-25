@@ -1,5 +1,5 @@
 /* Legal pages (privacy policy, cookie policy) and the cookie inventory.
-   Fill in the bracketed [placeholders] in LEGAL before going live, and keep COOKIES
+   Keep the company details in LEGAL up to date, and keep COOKIES
    in sync with what the site actually stores in the browser. */
 
 export const LEGAL = {
@@ -7,7 +7,7 @@ export const LEGAL = {
   regCode: '16436231',
   address: 'Sõpruse pst 257-41, 13414 Tallinn, Estonia',
   email: 'support@worklay.com',
-  hosting: '[hosting provider and country, e.g. Hetzner Online GmbH, Germany]',
+  hosting: { en: 'Hetzner Online GmbH, Germany; server in Helsinki, Finland', et: 'Hetzner Online GmbH, Saksamaa; server asub Helsingis, Soomes' },
   updated: '2026-11-25',
 };
 
@@ -75,7 +75,7 @@ export function privacyPage(lang) {
       <li><b>Kõik külastajad:</b> sinu avalik profiil (nimi, profiilipilt, ametinimetus, linn ja piirkond, tutvustus, oskused, hind, arvustused, kontrollitud märk) ning sinu postitatud projektid ja teenused. Sinu e-post ei ole avalik.</li>
       <li><b>Teised kasutajad:</b> sõnumid näeb ainult adressaat; pakkumisi, tellimusi, broneeringuid (sh aadressi ja märkusi) ning teatatud probleeme koos tõenditega näevad ainult tehingu osapooled.</li>
       <li><b>Worklay administraatorid:</b> näevad isikusamasuse dokumente, teatatud probleeme ja nende tõendeid, väljamaksetaotlusi ja kontaktivormi sõnumeid ainult nende menetlemiseks.</li>
-      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte, ning Brevo (Sendinblue SAS, Prantsusmaa), kes saadab meie e-kirju ja saab selleks sinu nime, e-posti aadressi ja kirja sisu. Nad töötlevad andmeid ainult meie juhiste järgi.</li>
+      <li><b>Volitatud töötlejad:</b> majutusteenuse pakkuja (${LEGAL.hosting.et}) ja Cloudflare, Inc., kelle R2 failihoidlas (Euroopa andmekeskustes) hoiame profiilipilte, ning Brevo (Sendinblue SAS, Prantsusmaa), kes saadab meie e-kirju ja saab selleks sinu nime, e-posti aadressi ja kirja sisu. Nad töötlevad andmeid ainult meie juhiste järgi.</li>
       <li><b>Google:</b> kui kasutad Google’iga sisselogimist, suuname sind Google’i lehele ja Google töötleb sinu sisselogimist iseseisva vastutava töötlejana vastavalt oma privaatsuspoliitikale.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Iirimaa) töötleb kaardimakseid, hoiab raha kuni töö kinnitamiseni, kontrollib vabakutseliste isikut ja teeb neile väljamakseid. Stripe on nende andmete osas iseseisev vastutav töötleja.</li>
       <li><b>Makseteenuse pakkujad:</b> PayPal, Payoneer või sinu pank saavad väljamakse tegemiseks vajalikud andmed ja töötlevad neid iseseisva vastutava töötlejana.</li>
@@ -150,7 +150,7 @@ export function privacyPage(lang) {
       <li><b>Everyone:</b> your public profile (name, profile photo, headline, city and area, bio, skills, rate, reviews, verified badge) and the projects and services you post. Your email is not public.</li>
       <li><b>Other members:</b> messages are visible only to the recipient; proposals, orders and bookings (including the address and notes), and reported problems with their proof, are visible only to the parties involved.</li>
       <li><b>Worklay administrators:</b> see verification documents, reported problems and their proof, payout requests and contact messages only to handle them.</li>
-      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos, and Brevo (Sendinblue SAS, France), which sends our emails and receives your name, email address and the message for that. They process data only on our instructions.</li>
+      <li><b>Processors:</b> our hosting provider (${LEGAL.hosting.en}) and Cloudflare, Inc., whose R2 storage (in European data centres) holds profile photos, and Brevo (Sendinblue SAS, France), which sends our emails and receives your name, email address and the message for that. They process data only on our instructions.</li>
       <li><b>Google:</b> if you use Sign in with Google, we send you to Google’s page, and Google handles that sign-in as an independent controller under its own privacy policy.</li>
       <li><b>Stripe:</b> Stripe Payments Europe, Ltd. (Ireland) processes card payments, holds the money until the work is approved, verifies freelancers’ identity and pays them out. Stripe acts as an independent controller for this data.</li>
       <li><b>Payment providers:</b> PayPal, Payoneer or your bank receive the details needed to send a payout and handle them as independent controllers.</li>
