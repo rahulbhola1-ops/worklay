@@ -38,7 +38,7 @@ const JOBS = {
   booking: { table: 'wl_bookings', column: 'booking_id', open: 'CONFIRMED', done: 'COMPLETED', link: '#/dashboard/bookings' },
 };
 
-export function createPayments({ db, notify, publicOrigin, email = async () => {} }) {
+export function createPayments({ db, notify, publicOrigin }) {
   const secret = process.env.STRIPE_SECRET_KEY || '';
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
   const stripe = secret ? new Stripe(secret) : null;
@@ -47,6 +47,12 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
   const getPayment = id => db.selectFrom('wl_payments').selectAll().where('id', '=', id).executeTakeFirst();
   const bySession = id => db.selectFrom('wl_payments').selectAll().where('checkout_session_id', '=', id).executeTakeFirst();
   const net = p => round2(p.amount - p.fee);
+
+  async function names(ex, p) {
+    const us = await ex.selectFrom('wl_users').select(['id', 'name']).where('id', 'in', [p.buyer_id, p.seller_id]).execute();
+    const of = id => us.find(u => u.id === id)?.name || 'Someone';
+    return { buyer: of(p.buyer_id), seller: of(p.seller_id) };
+  }
 
   // ---- checkout ----
   async function startCheckout(req, { kind, buyer, sellerId, amount, title, orderId = null, projectId = null, proposalId = null, bookingId = null }) {
@@ -88,16 +94,21 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
         if (!changed(r)) return;
         if (p.kind === 'order') {
           await trx.updateTable('wl_orders').set({ status: 'in_queue' }).where('id', '=', p.order_id).execute();
-          await notify(p.seller_id, 'order', 'You have a new paid order.', '#/dashboard/selling', trx);
+          const s = await trx.selectFrom('wl_orders as o').innerJoin('wl_services as s', 's.id', 'o.service_id').select('s.title').where('o.id', '=', p.order_id).executeTakeFirst();
+          const { buyer, seller } = await names(trx, p);
+          await notify(p.seller_id, 'order', `${buyer} ordered “${s?.title || 'your service'}” and paid €${p.amount}.`, '#/dashboard/selling', trx, 'New paid order');
+          await notify(p.buyer_id, 'order', `Your order of “${s?.title || 'a service'}” from ${seller} is paid (€${p.amount}). Worklay holds the money until the work is done.`, '#/dashboard/orders', trx, 'Your order is paid');
           return;
         }
         if (p.kind === 'booking') {
           // Paid: the booking now waits for the freelancer to confirm. If it was cancelled meanwhile
           // (the checkout took too long and the slot was freed), give the money back.
           const b = await trx.updateTable('wl_bookings').set({ status: 'PENDING', updated_at: sql`now()` })
-            .where('id', '=', p.booking_id).where('status', '=', 'AWAITING_PAYMENT').executeTakeFirst();
-          if (!changed(b)) { refundNeeded = true; return; }
-          await notify(p.seller_id, 'booking', 'You have a new paid booking request. Please confirm it.', '#/dashboard/bookings', trx);
+            .where('id', '=', p.booking_id).where('status', '=', 'AWAITING_PAYMENT').returning(['booking_date', 'start_time']).executeTakeFirst();
+          if (!b) { refundNeeded = true; return; }
+          const { buyer, seller } = await names(trx, p), when = `${b.booking_date} at ${b.start_time}`;
+          await notify(p.seller_id, 'booking', `${buyer} requested a booking on ${when} and paid €${p.amount}. Please confirm it.`, '#/dashboard/bookings', trx, 'New paid booking request');
+          await notify(p.buyer_id, 'booking', `Your booking request to ${seller} for ${when} is paid (€${p.amount}). We’ll let you know when they answer; you’re refunded if they decline.`, '#/dashboard/bookings', trx, 'Your booking request was sent');
           return;
         }
         // Lock the project so two payments can't both award it.
@@ -106,7 +117,9 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
         await trx.updateTable('wl_projects').set({ status: 'awarded', awarded_to: p.seller_id, awarded_amount: p.amount }).where('id', '=', project.id).execute();
         await trx.updateTable('wl_proposals').set({ status: 'accepted' }).where('id', '=', p.proposal_id).execute();
         await trx.updateTable('wl_proposals').set({ status: 'rejected' }).where('project_id', '=', project.id).where('id', '<>', p.proposal_id).where('status', '=', 'pending').execute();
-        await notify(p.seller_id, 'project', 'You were awarded a project. The customer has paid.', `#/project/${project.id}`, trx);
+        const { seller } = await names(trx, p);
+        await notify(p.seller_id, 'project', `You were awarded the project “${project.title}”. The customer has paid €${p.amount}.`, `#/project/${project.id}`, trx, 'You were awarded a project');
+        await notify(p.buyer_id, 'project', `You awarded “${project.title}” to ${seller} and paid €${p.amount}. Worklay holds the money until the work is done.`, `#/project/${project.id}`, trx, 'Your project is paid');
       });
       // The project was awarded through another payment in the meantime: give this one back.
       if (refundNeeded) await refund(p.id, p.kind === 'booking' ? 'The booking was no longer available' : 'Project was already awarded').catch(e => console.error('Refund failed', p.id, e.message));
@@ -144,7 +157,7 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
   }
   async function finishRefund(p, reason) {
     const r = await db.updateTable('wl_payments').set({ status: 'refunded', processing_at: null }).where('id', '=', p.id).where('status', '=', 'refunding').executeTakeFirst();
-    if (changed(r)) await notify(p.buyer_id, 'payment', `Your payment of €${p.amount} was refunded: ${reason}.`, '#/dashboard');
+    if (changed(r)) await notify(p.buyer_id, 'payment', `Your payment of €${p.amount} was refunded: ${reason}.`, '#/dashboard', db, 'Your payment was refunded');
   }
 
   // Give a held booking payment back (declined or cancelled). Returns false if nothing was paid.
@@ -208,8 +221,8 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
             if (!(await releaseIn(trx, p, { unlessProblem: true }))) return false;
             const r = await trx.updateTable(j.table).set({ status: j.done }).where('id', '=', p[j.column]).where('status', '=', j.open).where('delivered_at', '<=', hoursAgo(APPROVAL_DAYS * 24)).executeTakeFirst();
             if (!changed(r)) throw Object.assign(new Error('job changed'), { skip: true });
-            await notify(p.seller_id, 'payment', `The client didn’t respond within ${APPROVAL_DAYS} days, so your payment of €${net(p)} was released automatically.`, '#/dashboard/earnings', trx);
-            await notify(p.buyer_id, 'payment', `€${p.amount} was released to the freelancer because you didn’t approve the work or report a problem within ${APPROVAL_DAYS} days.`, j.link, trx);
+            await notify(p.seller_id, 'payment', `The client didn’t respond within ${APPROVAL_DAYS} days, so your payment of €${net(p)} was released automatically.`, '#/dashboard/earnings', trx, 'Your payment was released');
+            await notify(p.buyer_id, 'payment', `€${p.amount} was released to the freelancer because you didn’t approve the work or report a problem within ${APPROVAL_DAYS} days.`, j.link, trx, 'Your payment was released to the freelancer');
             return true;
           });
           if (done) sendSoon(p.seller_id);
@@ -220,7 +233,8 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
         const claimed = await db.updateTable('wl_payments').set({ reminded_at: sql`now()` }).where('id', '=', p.id).where('reminded_at', 'is', null).where('status', '=', 'paid').executeTakeFirst();
         if (!changed(claimed)) continue;
         const by = new Date(new Date(p.delivered_at).getTime() + APPROVAL_DAYS * 24 * HOUR);
-        await askApproval(p, by, true);
+        const { seller } = await names(db, p);
+        await notify(p.buyer_id, 'payment', `Reminder: ${seller} marked the work as done. Please check it and approve it, or report a problem with proof.${deadlineRule(p, by)}`, j.link, db, 'Reminder: please check the finished work');
       }
     }
     // Reported problems that Worklay should decide soon.
@@ -228,7 +242,7 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
       .where('problem_at', '<=', hoursAgo((APPROVAL_DAYS - REMIND_DAYS) * 24)).execute();
     for (const p of due) {
       if (!changed(await db.updateTable('wl_payments').set({ problem_reminded_at: sql`now()` }).where('id', '=', p.id).where('problem_reminded_at', 'is', null).executeTakeFirst())) continue;
-      for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${p.id}: please decide the reported problem by ${day(deadline(p.problem_at))}.`, '#/admin');
+      for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${p.id}: please decide the reported problem by ${day(deadline(p.problem_at))}.`, '#/admin', db, 'Please decide a reported problem');
     }
     // Proof files aren't needed long after the decision; the record that there was one stays.
     await db.updateTable('wl_payment_proofs').set({ data: null }).where('data', 'is not', null).where('uploaded_at', '<', sql`now() - interval '6 months'`)
@@ -237,21 +251,12 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
   const deadline = from => new Date(new Date(from).getTime() + APPROVAL_DAYS * 24 * HOUR);
   const day = d => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Tallinn' }).format(d);
 
-  // Tells the client (on the site and by email) that finished work waits for them. No deadline is
-  // mentioned for payments without automatic release.
-  async function askApproval(p, by, reminder = false) {
-    const link = JOBS[p.kind].link, seller = await db.selectFrom('wl_users').select('name').where('id', '=', p.seller_id).executeTakeFirst();
-    const rule = p.auto_release ? ` If you don’t approve it or report a problem by ${day(by)}, the payment of €${p.amount} goes to the freelancer automatically.` : '';
-    if (reminder) await notify(p.buyer_id, 'payment', `Reminder: ${seller?.name || 'The freelancer'} marked the work as done.${rule}`, link);
-    await email(p.buyer_id, { subject: reminder ? 'Reminder: please check the finished work' : 'Please check the finished work',
-      line: `${seller?.name || 'The freelancer'} marked the work as done. Please check it and approve it, or report a problem with proof.${rule}`, link, label: 'Check the work' });
-    return rule;
-  }
-  // Called when the freelancer marks a job as done: emails the client and returns the deadline
-  // sentence for the notification ('' if this job isn't paid through Stripe).
+  // What happens if the client does nothing. Empty for payments without automatic release.
+  const deadlineRule = (p, by) => (p.auto_release ? ` If you don’t approve it or report a problem by ${day(by)}, the payment of €${p.amount} goes to the freelancer automatically.` : '');
+  // For the notification when the freelancer marks a job as done ('' if it isn't paid through Stripe).
   async function delivered(ref) {
     const p = await paidPaymentFor(ref);
-    return p && !p.problem_at ? askApproval(p, deadline(new Date())) : '';
+    return p && !p.problem_at ? deadlineRule(p, deadline(new Date())) : '';
   }
 
   async function markTransferred(p, transferId) {
@@ -261,7 +266,7 @@ export function createPayments({ db, notify, publicOrigin, email = async () => {
       await trx.updateTable('wl_users').set({ balance: sql`greatest(0, balance - ${net(p)})` }).where('id', '=', p.seller_id).execute();
       return true;
     });
-    if (done) await notify(p.seller_id, 'payment', `€${net(p)} was sent to your Stripe account. Stripe will pay it out to your bank.`, '#/dashboard/earnings');
+    if (done) await notify(p.seller_id, 'payment', `€${net(p)} was sent to your Stripe account. Stripe will pay it out to your bank.`, '#/dashboard/earnings', db, 'Your money is on its way');
   }
 
   // Send every released payment to the freelancer's Stripe account, if it can receive money.

@@ -1,11 +1,11 @@
 /* Transactional email through Brevo (https://www.brevo.com), used for the welcome email and for
-   reminders about finished work.
+   notification emails (see notifications.mjs).
 
    Needs BREVO_API_KEY (Brevo → SMTP & API → API keys) and MAIL_FROM_EMAIL, an address on a sender
    or domain verified in Brevo (Brevo → Senders, domains & dedicated IPs). MAIL_FROM_NAME defaults
    to "Worklay". Without the key or sender, emails are switched off and only logged. */
 
-const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
+const BREVO_URL = process.env.BREVO_URL || 'https://api.brevo.com/v3/smtp/email'; // override for tests
 
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -27,7 +27,7 @@ export function createMailer() {
       }),
       signal: AbortSignal.timeout(10_000),
     });
-    if (!r.ok) throw new Error(`Brevo send failed (${r.status}): ${(await r.text()).slice(0, 300)}`);
+    if (!r.ok) throw Object.assign(new Error(`Brevo send failed (${r.status}): ${(await r.text()).slice(0, 300)}`), { status: r.status });
   }
 
   // Welcome email after sign-up. Freelancers are pointed at their service profile, clients at
@@ -60,7 +60,7 @@ export function createMailer() {
       .catch(e => console.error('[mail] welcome email failed:', e.message));
   }
 
-  // Short message with one button, e.g. "please check the finished work". Never throws.
+  // Notification with one button, e.g. "You have a new booking request". Throws if it wasn't sent.
   function sendNote(user, { subject, line, link, label }, origin) {
     const first = String(user.name || '').trim().split(/\s+/)[0] || 'there', url = `${origin}/${link}`;
     const text = `Hi ${first},\n\n${line}\n\n${url}\n\nThe Worklay team`;
@@ -75,7 +75,7 @@ export function createMailer() {
 </td></tr></table>
 </td></tr></table>
 </body></html>`;
-    return send({ to: user.email, name: user.name, subject, html, text, tags: ['payment'] }).catch(e => console.error('[mail] note failed:', e.message));
+    return send({ to: user.email, name: user.name, subject, html, text, tags: ['notification'] });
   }
 
   return { enabled, send, sendWelcome, sendNote };

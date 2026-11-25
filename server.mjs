@@ -9,6 +9,7 @@ import { migrateToLatest } from './db/migrate.mjs';
 import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
 import { createMailer } from './mail.mjs';
+import { createNotifications } from './notifications.mjs';
 import { createSeo } from './seo.mjs';
 import { TERMS_VERSION, APPROVAL_DAYS } from './terms.mjs';
 import { Readable } from 'node:stream';
@@ -58,18 +59,17 @@ setInterval(() => { const now = Date.now(); for (const [k, a] of attempts) if (a
 const db = createDb();
 if (process.env.MIGRATE_ON_START !== 'false') await migrateToLatest(db);
 
+// Emails through Brevo (welcome and notifications); switched off (logged only) without BREVO_API_KEY.
+const mailer = createMailer();
+// Notifications on the site, emailed too when they are about bookings, orders, projects or payments.
+const notifications = createNotifications({ db, mailer, origin: (process.env.PUBLIC_URL || 'https://worklay.com').replace(/\/+$/, '') });
+const { notify } = notifications;
 // Card payments through Stripe Connect; disabled (manual payouts) without STRIPE_SECRET_KEY.
-const payments = createPayments({ db, notify, publicOrigin, email: emailUser });
+const payments = createPayments({ db, notify, publicOrigin });
 const MIN_PAYOUT = 20;
 // Profile photos in Cloudflare R2; uploads are switched off without R2 keys.
 const storage = createStorage();
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
-// Welcome emails through Brevo; switched off (logged only) without BREVO_API_KEY.
-const mailer = createMailer();
-async function emailUser(id, note) {
-  const u = await db.selectFrom('wl_users').select(['name', 'email']).where('id', '=', id).executeTakeFirst();
-  if (u) mailer.sendNote(u, note, (process.env.PUBLIC_URL || 'https://worklay.com').replace(/\/+$/, '')); // not awaited: a slow email must not hold up the page
-}
 // Pay for work nobody objected to, then finish interrupted transfers and refunds and retry failed ones.
 let paymentJob = false;
 async function retryPayments() {
@@ -269,10 +269,6 @@ function passwordVerify(password, stored) {
   const expected = Buffer.from(parts[2], 'hex');
   const actual = crypto.scryptSync(password, parts[1], 64);
   return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
-}
-// `ex` lets callers write the notification inside their transaction.
-async function notify(userId, type, text, link = '', ex = db) {
-  await ex.insertInto('wl_notifications').values({ user_id: userId, type, text, link }).execute();
 }
 
 /* ---------- Sign in with Google (OAuth 2.0 authorization code flow + PKCE) ----------
@@ -728,7 +724,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (!pr || pr.awarded_to !== u.id) return bad(res, 'Project not found.', 404);
         const r = await db.updateTable('wl_projects').set({ delivered_at: sql`now()` }).where('id', '=', pr.id).where('status', '=', 'awarded').where('delivered_at', 'is', null).executeTakeFirst();
         if (!changed(r)) return bad(res, 'This project can’t be marked as done.');
-        await notify(pr.owner_id, 'project', `${u.name} marked “${pr.title}” as done. Please check the work and release the payment.${await payments.delivered({ projectId: pr.id })}`, `#/project/${pr.id}`);
+        await notify(pr.owner_id, 'project', `${u.name} marked “${pr.title}” as done. Please check the work and release the payment.${await payments.delivered({ projectId: pr.id })}`, `#/project/${pr.id}`, db, 'Work is done: please check it');
         return res.json({ ok: true });
       }
       case 'booking/deliver': {
@@ -738,7 +734,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as done once it has started.');
         const r = await db.updateTable('wl_bookings').set({ delivered_at: sql`now()`, updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').where('delivered_at', 'is', null).executeTakeFirst();
         if (!changed(r)) return bad(res, 'This booking can’t be marked as done.');
-        await notify(b.client_id, 'booking', `${u.name} marked your booking on ${b.booking_date} as done. Please approve it to release the payment.${await payments.delivered({ bookingId: b.id })}`, '#/dashboard/bookings');
+        await notify(b.client_id, 'booking', `${u.name} marked your booking on ${b.booking_date} as done. Please approve it to release the payment.${await payments.delivered({ bookingId: b.id })}`, '#/dashboard/bookings', db, 'Work is done: please check it');
         return res.json({ ok: true });
       }
       // Either side asks Worklay to look at a payment that is still held. Clients must attach proof;
@@ -759,8 +755,8 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         });
         if (!saved) return bad(res, pay.problem_at ? 'A problem has already been reported for this payment.' : 'This payment is no longer held.');
         const other = pay.buyer_id === u.id ? pay.seller_id : pay.buyer_id;
-        await notify(other, 'payment', `${u.name} reported a problem with a payment of €${pay.amount}. The money stays held and Worklay decides within ${APPROVAL_DAYS} days. You can add your own proof.`, '#/dashboard');
-        for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${pay.id}: ${u.name} reported a problem. Please decide within ${APPROVAL_DAYS} days.`, '#/admin');
+        await notify(other, 'payment', `${u.name} reported a problem with a payment of €${pay.amount}. The money stays held and Worklay decides within ${APPROVAL_DAYS} days. You can add your own proof.`, '#/dashboard', db, 'A problem was reported');
+        for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${pay.id}: ${u.name} reported a problem. Please decide within ${APPROVAL_DAYS} days.`, '#/admin', db, 'A problem was reported');
         return res.json({ ok: true });
       }
       // More proof for a reported problem, from either side.
@@ -795,8 +791,8 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         const ok = release ? await payments.release({ [key]: jobId }) : await payments.refund(pay.id, note || 'decided by Worklay');
         if (!ok) return bad(res, 'This payment is no longer held.');
         await db.updateTable(table).set({ status: release ? done : cancelled }).where('id', '=', jobId).execute();
-        await notify(pay.seller_id, 'payment', release ? `Worklay released your payment of €${netOf(pay.amount)}.${note ? ' ' + note : ''}` : `Worklay refunded a payment of €${pay.amount} to the client.${note ? ' ' + note : ''}`, '#/dashboard/earnings');
-        if (release) await notify(pay.buyer_id, 'payment', `Worklay released your payment of €${pay.amount} to the freelancer.${note ? ' ' + note : ''}`, '#/dashboard');
+        await notify(pay.seller_id, 'payment', release ? `Worklay released your payment of €${netOf(pay.amount)}.${note ? ' ' + note : ''}` : `Worklay refunded a payment of €${pay.amount} to the client.${note ? ' ' + note : ''}`, '#/dashboard/earnings', db, release ? 'Your payment was released' : 'A payment was refunded');
+        if (release) await notify(pay.buyer_id, 'payment', `Worklay released your payment of €${pay.amount} to the freelancer.${note ? ' ' + note : ''}`, '#/dashboard', db, 'Your payment was released to the freelancer');
         return res.json({ ok: true });
       }
       case 'onboarding/save': {
@@ -874,7 +870,8 @@ app.all('/api', upload.single('doc'), async (req, res) => {
             throw e;
           }
         }
-        await notify(f.id, 'booking', `${u.name} requested a booking on ${date} at ${start}. Please confirm it.`, '#/dashboard/bookings');
+        await notify(f.id, 'booking', `${u.name} requested a booking on ${date} at ${start} (€${price}). Please confirm it.`, '#/dashboard/bookings', db, 'New booking request');
+        await notify(u.id, 'booking', `Your booking request to ${f.name} for ${date} at ${start} (€${price}) was sent. We’ll let you know when they answer.`, '#/dashboard/bookings', db, 'Your booking request was sent');
         return res.json({ ok: true, id: sid(bookingId) });
       }
       case 'booking/respond': {
@@ -886,7 +883,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
           .where('id', '=', b.id).where('status', '=', 'PENDING').executeTakeFirst();
         if (!changed(r)) return bad(res, 'This booking can’t be changed any more.');
         if (!accept) await payments.refundBooking(b.id, 'The freelancer declined the booking');
-        await notify(b.client_id, 'booking', accept ? `Your booking on ${b.booking_date} at ${b.start_time} was confirmed ✓` : `Your booking on ${b.booking_date} at ${b.start_time} was declined${payments.enabled ? ' and refunded' : ''}.`, '#/dashboard/bookings');
+        await notify(b.client_id, 'booking', accept ? `Your booking on ${b.booking_date} at ${b.start_time} was confirmed ✓` : `Your booking on ${b.booking_date} at ${b.start_time} was declined${payments.enabled ? ' and refunded' : ''}.`, '#/dashboard/bookings', db, accept ? 'Your booking is confirmed' : 'Your booking was declined');
         return res.json({ ok: true });
       }
       case 'booking/cancel': {
@@ -905,7 +902,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
           .where('id', '=', b.id).where('status', 'in', ACTIVE_BOOKING).executeTakeFirst();
         if (!changed(r)) return bad(res, 'This booking can’t be cancelled any more.');
         const refunded = await payments.refundBooking(b.id, `Booking cancelled by the ${isClient ? 'client' : 'freelancer'}`);
-        if (b.status !== 'AWAITING_PAYMENT') await notify(isClient ? b.freelancer_id : b.client_id, 'booking', `The booking on ${b.booking_date} at ${b.start_time} was cancelled by ${u.name}${refunded ? '; the payment was refunded' : ''}.`, '#/dashboard/bookings');
+        if (b.status !== 'AWAITING_PAYMENT') await notify(isClient ? b.freelancer_id : b.client_id, 'booking', `The booking on ${b.booking_date} at ${b.start_time} was cancelled by ${u.name}${refunded ? '; the payment was refunded' : ''}.`, '#/dashboard/bookings', db, 'A booking was cancelled');
         return res.json({ ok: true, refunded });
       }
       case 'booking/complete': {
@@ -915,7 +912,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (b.status !== 'CONFIRMED') return bad(res, 'Only confirmed bookings can be marked as completed.');
         if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as completed once it has started.');
         if (!changed(await db.updateTable('wl_bookings').set({ status: 'COMPLETED', updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').executeTakeFirst())) return res.json({ ok: true });
-        if (await settle({ bookingId: b.id }, b.freelancer_id, b.total_price)) await notify(b.freelancer_id, 'payment', `The client marked the booking on ${b.booking_date} as completed and released the payment.`, '#/dashboard/earnings');
+        if (await settle({ bookingId: b.id }, b.freelancer_id, b.total_price)) await notify(b.freelancer_id, 'payment', `The client marked the booking on ${b.booking_date} as completed and released the payment.`, '#/dashboard/earnings', db, 'Your work was approved');
         return res.json({ ok: true });
       }
       case 'admin/payout-paid': {
@@ -1050,7 +1047,7 @@ async function mutateProjectAward(req, res, u, data) {
     const r = await trx.updateTable('wl_projects').set({ status: 'awarded', awarded_to: pr.seller_id, awarded_amount: pr.amount }).where('id', '=', project.id).where('status', '=', 'open').executeTakeFirst();
     if (!changed(r)) return false;
     await trx.updateTable('wl_proposals').set({ status: 'accepted' }).where('id', '=', pr.id).execute();
-    await notify(pr.seller_id, 'project', 'You were awarded a project.', `#/project/${project.id}`, trx);
+    await notify(pr.seller_id, 'project', `You were awarded the project “${project.title}”.`, `#/project/${project.id}`, trx, 'You were awarded a project');
     return true;
   });
   if (!awarded) return bad(res, 'This project has already been awarded.');
@@ -1063,7 +1060,7 @@ async function mutateProjectComplete(res, u, data) {
   if (!p || p.owner_id !== u.id) return bad(res, 'Project owner only.', 403);
   if (p.status !== 'awarded') return bad(res, 'Only projects in progress can be completed.');
   if (!changed(await db.updateTable('wl_projects').set({ status: 'completed' }).where('id', '=', p.id).where('status', '=', 'awarded').executeTakeFirst())) return res.json({ ok: true });
-  if (await settle({ projectId: p.id }, p.awarded_to, p.awarded_amount || 0)) await notify(p.awarded_to, 'payment', 'The customer approved your work and released the payment.', '#/dashboard/earnings');
+  if (await settle({ projectId: p.id }, p.awarded_to, p.awarded_amount || 0)) await notify(p.awarded_to, 'payment', `The customer approved your work on “${p.title}” and released the payment.`, '#/dashboard/earnings', db, 'Your work was approved');
   return res.json({ ok: true });
 }
 
@@ -1088,7 +1085,8 @@ async function mutateOrder(req, res, u, data) {
     }
   }
   const o = await db.insertInto('wl_orders').values(values).returning('id').executeTakeFirstOrThrow();
-  await notify(service.seller_id, 'order', 'You have a new order.', '#/dashboard/orders');
+  await notify(service.seller_id, 'order', `${u.name} ordered “${service.title}” (€${price}).`, '#/dashboard/selling', db, 'New order');
+  await notify(u.id, 'order', `Your order of “${service.title}” (€${price}) was sent to the freelancer.`, '#/dashboard/orders', db, 'Your order was placed');
   return res.json({ ok: true, id: sid(o.id) });
 }
 
@@ -1101,9 +1099,9 @@ async function mutateOrderStatus(res, u, data, status) {
   const from = status === 'delivered' ? ['in_queue'] : ['in_queue', 'delivered'];
   if (!from.includes(o.status)) return bad(res, 'This order can’t be changed any more.');
   if (!changed(await db.updateTable('wl_orders').set({ status, ...(status === 'delivered' ? { delivered_at: sql`now()` } : {}) }).where('id', '=', o.id).where('status', 'in', from).executeTakeFirst())) return res.json({ ok: true });
-  if (status === 'delivered') await notify(o.buyer_id, 'order', `Your order was delivered. Please review and approve it.${await payments.delivered({ orderId: o.id })}`, '#/dashboard/orders');
+  if (status === 'delivered') await notify(o.buyer_id, 'order', `Your order was delivered. Please review and approve it.${await payments.delivered({ orderId: o.id })}`, '#/dashboard/orders', db, 'Work is done: please check it');
   if (status === 'completed') {
-    if (await settle({ orderId: o.id }, o.seller_id, o.price)) await notify(o.seller_id, 'payment', 'The buyer approved your delivery and released the payment.', '#/dashboard/earnings');
+    if (await settle({ orderId: o.id }, o.seller_id, o.price)) await notify(o.seller_id, 'payment', 'The buyer approved your delivery and released the payment.', '#/dashboard/earnings', db, 'Your work was approved');
   }
   return res.json({ ok: true });
 }
@@ -1123,6 +1121,7 @@ if (!process.argv.includes('--dev')) {
 }
 
 const port = process.argv.includes('--dev') ? 3001 : Number(process.env.PORT || 5173);
+notifications.start();
 const server = app.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`Worklay Node API listening on port ${port}`));
 
 // Close the database pool cleanly when Docker or Ctrl+C stops the server.
