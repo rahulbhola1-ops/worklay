@@ -17,6 +17,7 @@ export const PRIVATE_SECTIONS = ['dashboard', 'admin', 'messages', 'notification
 const PUBLIC_STATIC = {
   about: ['About Worklay', 'Worklay is a local services marketplace built on trust: verified freelancers, clear prices and payment released only when the work is done.'],
   contact: ['Contact Worklay', 'Questions, feedback or partnerships: get in touch with the Worklay team.'],
+  terms: ['Terms of Service', 'How Worklay works: payments are held until the work is done, Worklay keeps 10%, and how cancellations, refunds and disputes are handled.'],
   privacy: ['Privacy Policy', 'How Worklay collects, uses and protects your personal data.'],
   cookies: ['Cookie Policy', 'The cookies and browser storage Worklay uses, and how to change your choices.'],
 };
@@ -36,6 +37,7 @@ export function createSeo({ db, categories, publicOrigin, cities, indexHtmlPath 
     return template;
   };
 
+  const approved = cats => cats.filter(c => c.status !== 'NEW'); // categories an admin hasn't looked at yet aren't advertised
   const freelancerQuery = () => db.selectFrom('wl_users')
     .select(['id', 'name', 'title', 'category', 'city', 'area', 'specialty', 'bio', 'pricing_type', 'price_amount', 'price_unit_label', 'created_at'])
     .where('is_freelancer', '=', true).where('onboarding_completed_at', 'is not', null);
@@ -45,7 +47,7 @@ export function createSeo({ db, categories, publicOrigin, cities, indexHtmlPath 
 <header class="topbar"><div class="container topbar-inner"><a href="/" class="logo">Worklay</a>
 <nav class="mainnav" aria-label="Main"><a href="/freelancers">Find freelancers</a> <a href="/projects">Projects</a> <a href="/services">Services</a> <a href="/blog">Blog</a> <a href="/about">About</a> <a href="/contact">Contact</a></nav></div></header>
 <main id="app" class="app" tabindex="-1"><div class="container ssr-content">${mainHtml}</div></main>
-<footer class="footer"><div class="container"><nav aria-label="Footer"><a href="/freelancers">Find freelancers</a> <a href="/services">Services</a> <a href="/projects">Projects</a> <a href="/about">About</a> <a href="/privacy">Privacy Policy</a> <a href="/cookies">Cookie Policy</a></nav><p>© ${new Date().getFullYear()} Worklay. ${esc(TAGLINE)}</p></div></footer>`;
+<footer class="footer"><div class="container"><nav aria-label="Footer"><a href="/freelancers">Find freelancers</a> <a href="/services">Services</a> <a href="/projects">Projects</a> <a href="/about">About</a> <a href="/terms">Terms</a> <a href="/privacy">Privacy Policy</a> <a href="/cookies">Cookie Policy</a></nav><p>© ${new Date().getFullYear()} Worklay. ${esc(TAGLINE)}</p></div></footer>`;
 
   const siteJsonLd = origin => [
     { '@context': 'https://schema.org', '@type': 'WebSite', name: SITE_NAME, url: `${origin}/`, description: DEFAULT_DESCRIPTION, inLanguage: ['en', 'et', 'ru'],
@@ -69,7 +71,7 @@ export function createSeo({ db, categories, publicOrigin, cities, indexHtmlPath 
       html: `<h1>Find trusted local professionals for any job</h1>
 <p>${esc(DEFAULT_DESCRIPTION)}</p>
 <p><a href="/freelancers">Find freelancers</a> · <a href="/services">Browse services</a> · <a href="/projects">Browse projects</a></p>
-<section aria-labelledby="ssr-cats"><h2 id="ssr-cats">Browse categories</h2><ul>${cats.map(c => `<li><a href="/freelancers?cat=${esc(c.id)}">${esc(c.name)}</a></li>`).join('')}</ul></section>
+<section aria-labelledby="ssr-cats"><h2 id="ssr-cats">Browse categories</h2><ul>${approved(cats).map(c => `<li><a href="/freelancers?cat=${esc(c.id)}">${esc(c.name)}</a></li>`).join('')}</ul></section>
 ${fls.length ? `<section aria-labelledby="ssr-new"><h2 id="ssr-new">Freelancers on Worklay</h2><ul>${fls.map(f => freelancerCard(f, cats)).join('')}</ul></section>` : ''}
 <section aria-labelledby="ssr-how"><h2 id="ssr-how">How it works</h2><ol><li>Post your job for free or book a freelancer directly.</li><li>Compare profiles, prices and reviews.</li><li>Pay securely; the money is released only after you approve the work.</li></ol></section>
 <p>Local professionals in ${Object.keys(cities).length} Estonian cities: ${Object.keys(cities).map(esc).join(', ')}.</p>`,
@@ -90,10 +92,11 @@ ${fls.length ? `<section aria-labelledby="ssr-new"><h2 id="ssr-new">Freelancers 
     return {
       title,
       description: clip(`${cat ? `Hire trusted local freelancers for ${cat.name.toLowerCase()}` : 'Hire trusted local freelancers'}${city ? ` in ${city}` : ' across Estonia'} on Worklay. Compare profiles, prices and availability, and book online.`, 160),
+      robots: cat?.status === 'NEW' ? 'noindex, follow' : undefined,
       canonicalPath: '/freelancers' + (canonicalQuery ? `?${canonicalQuery}` : ''),
       html: `<h1>${esc(cat ? `${cat.name} freelancers` : 'Find freelancers')}${city ? ` in ${esc(city)}` : ''}</h1>
 ${fls.length ? `<ul>${fls.map(f => freelancerCard(f, cats)).join('')}</ul>` : '<p>No freelancers here yet.</p>'}
-<nav aria-label="Categories"><h2>Other categories</h2><ul>${cats.map(c => `<li><a href="/freelancers?cat=${esc(c.id)}">${esc(c.name)}</a></li>`).join('')}</ul></nav>`,
+<nav aria-label="Categories"><h2>Other categories</h2><ul>${approved(cats).map(c => `<li><a href="/freelancers?cat=${esc(c.id)}">${esc(c.name)}</a></li>`).join('')}</ul></nav>`,
     };
   }
 
@@ -272,8 +275,8 @@ ${pk.length ? `<h2>Packages</h2><ul>${pk.map(p => `<li>${esc(p.name || p.tier ||
     ]);
     const urls = [
       { loc: '/', priority: '1.0' }, { loc: '/freelancers', priority: '0.9' }, { loc: '/services', priority: '0.7' }, { loc: '/projects', priority: '0.7' },
-      { loc: '/blog', priority: '0.5' }, { loc: '/about', priority: '0.4' }, { loc: '/contact', priority: '0.3' }, { loc: '/privacy', priority: '0.2' }, { loc: '/cookies', priority: '0.2' },
-      ...cats.map(c => ({ loc: `/freelancers?cat=${c.id}`, priority: '0.8' })),
+      { loc: '/blog', priority: '0.5' }, { loc: '/about', priority: '0.4' }, { loc: '/contact', priority: '0.3' }, { loc: '/terms', priority: '0.2' }, { loc: '/privacy', priority: '0.2' }, { loc: '/cookies', priority: '0.2' },
+      ...approved(cats).map(c => ({ loc: `/freelancers?cat=${c.id}`, priority: '0.8' })),
       ...fls.map(f => ({ loc: `/user/${f.id}`, lastmod: day(f.created_at), priority: '0.7' })),
       ...svcs.map(s => ({ loc: `/service/${s.id}`, lastmod: day(s.created_at), priority: '0.6' })),
       ...posts.map(p => ({ loc: `/blog/${p.id}`, lastmod: day(p.created_at), priority: '0.5' })),

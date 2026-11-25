@@ -92,7 +92,19 @@ bank. Without Stripe keys the site keeps the manual payout flow.
    `account.updated`) and use its signing secret.
 5. Restart the server. Test cards: `4242 4242 4242 4242`, any future date, any CVC.
 
-Refunds and disputes are handled in the Stripe dashboard.
+**When the work is done**: the freelancer clicks **Work is done** (project, order or booking). No
+money moves until the client approves; approval sends the freelancer's share automatically. Either
+side can **Report a problem** while the money is held, and an admin then decides at `/admin` (**Pay
+freelancer** or **Refund client**). There is no automatic release if the client never answers.
+Transfers and refunds that were interrupted are retried every 10 minutes, after asking Stripe
+whether they already went through. Card disputes (chargebacks) are handled in the Stripe dashboard.
+
+## Terms of Service
+
+The text is in `terms-page.js` (English, Estonian, Russian) and the version in `terms.mjs`. Change
+`TERMS_VERSION` when the text changes in a way people must agree to: everyone is then asked to accept
+it again before posting, ordering, booking, sending proposals or publishing a profile. The accepted
+version and time are stored on the user. Company details come from `LEGAL` in `legal.js`.
 
 ## Profile photos (Cloudflare R2, optional)
 
@@ -173,7 +185,14 @@ Access control is done on the server for every API call. `robots.txt` is not a s
 **Categories** live in the database (`wl_categories`, `wl_subcategories`, seeded by migration
 `0004`). Each has a `service_type` (`REMOTE`, `ON_SITE`, `HYBRID`), `requires_verification`, the
 `required_documents` for verification, and suggested `perks`. Home & Cleaning, Childcare & Family
-and Driving & Transport require a government ID (Driving also a driver's licence).
+and Driving & Transport require a government ID (Driving also a driver's licence). Every category has
+subcategories (migration `0006`), which visitors can filter by on the freelancers page.
+
+**Own categories**: freelancers can create up to three categories during onboarding and add their own
+specialisations and skills. A name that already exists in any language is reused. A new category works
+straight away, but it stays off the home page and out of search engines until an admin approves it at
+`/admin/categories` (translate and approve, or merge into another). Categories for on-site work always
+require a government ID.
 
 **Onboarding** (`#/onboarding`): after signing up, freelancers set up their service profile in steps:
 1. category, subcategories, speciality and, for on-site work, city, area, travel radius and areas covered

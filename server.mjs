@@ -10,6 +10,7 @@ import { createPayments, PLATFORM_FEE } from './payments.mjs';
 import { createStorage, detectImage } from './storage.mjs';
 import { createMailer } from './mail.mjs';
 import { createSeo } from './seo.mjs';
+import { TERMS_VERSION } from './terms.mjs';
 import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -65,6 +66,9 @@ const storage = createStorage();
 const MAX_PHOTO_BYTES = 3 * 1024 * 1024;
 // Welcome emails through Brevo; switched off (logged only) without BREVO_API_KEY.
 const mailer = createMailer();
+// Finish interrupted transfers and refunds, and retry failed ones.
+const retryPayments = () => payments.retryStuck().catch(e => console.error('Payment retry failed', e.message));
+if (payments.enabled) { setTimeout(retryPayments, 30_000).unref(); setInterval(retryPayments, 10 * 60_000).unref(); }
 const netOf = amount => Math.round(Number(amount) * (1 - PLATFORM_FEE) * 100) / 100;
 
 payments.registerRoutes(app, { me }); // before express.json: the Stripe webhook needs the raw body
@@ -96,11 +100,27 @@ async function categories() {
     db.selectFrom('wl_subcategories').selectAll().orderBy('sort_order').execute(),
   ]);
   categoryCache = { at: Date.now(), list: cats.map(c => ({
-    id: c.id, name: c.name, nameEt: c.name_et, icon: c.icon, color: c.color, serviceType: c.service_type,
+    id: c.id, name: c.name, nameEt: c.name_et, nameRu: c.name_ru, status: c.status, createdBy: sid(c.created_by), icon: c.icon, color: c.color, serviceType: c.service_type,
     requiresVerification: c.requires_verification, requiredDocuments: list(c.required_documents), perks: list(c.perks),
-    subcategories: subs.filter(x => x.category_id === c.id).map(x => ({ id: x.id, name: x.name, nameEt: x.name_et })),
+    subcategories: subs.filter(x => x.category_id === c.id).map(x => ({ id: x.id, name: x.name, nameEt: x.name_et, nameRu: x.name_ru })),
   })) };
   return categoryCache.list;
+}
+const forgetCategories = () => { categoryCache = { at: 0, list: [] }; };
+const CATEGORY_ICONS = ['🧩', '🛠️', '🎨', '💡', '🐾', '🌱', '🍳', '🧵', '🚲', '🏋️', '📦', '🖥️', '🎭', '🧘', '🔧', '📐', '🎁', '🧑‍🏫'];
+const CATEGORY_COLORS = ['#eef1ff', '#e3f8ee', '#fff0e7', '#f0ebff', '#fdf1e1', '#e7f7f6', '#ffe9ee'];
+const MAX_OWN_CATEGORIES = 3;
+const cleanName = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+// Letters, digits and simple punctuation only: category names are shown all over the site.
+const validCategoryName = n => n.length >= 3 && n.length <= 40 && /^[\p{L}\p{N}][\p{L}\p{N} &,'’().+/-]*$/u.test(n) && /\p{L}{2}/u.test(n);
+const nameKey = n => cleanName(n).toLowerCase();
+// A category or one of its subcategories with this name, in any language.
+async function findCategoryByName(name) {
+  const key = nameKey(name), cats = await categories(), names = x => [x.name, x.nameEt, x.nameRu].filter(Boolean).map(nameKey);
+  const direct = cats.find(c => names(c).includes(key));
+  if (direct) return { category: direct, subcategory: null };
+  for (const c of cats) { const sub = c.subcategories.find(x => names(x).includes(key)); if (sub) return { category: c, subcategory: sub }; }
+  return null;
 }
 const categoryById = async id => (await categories()).find(c => c.id === id) || null;
 // Documents needed to be verified: the category's, or a government ID for the optional badge.
@@ -124,6 +144,8 @@ async function cleanProfile(data, cur) {
   return {
     category: cat ? cat.id : '',
     subcategories: json(cleanList(data.subcategories, 10).filter(x => subIds.has(x))),
+    custom_subcategories: json(cleanList(data.customSubcategories, 8)),
+    ...(data.skills === undefined ? {} : { skills: json(cleanList(data.skills, 20)) }),
     title: String(data.title ?? '').trim().slice(0, 60),
     specialty: String(data.specialty ?? '').trim().slice(0, 80),
     city, area,
@@ -177,6 +199,15 @@ async function recomputeVerification(userId, ex = db) {
   const status = need.every(d => d && d.status === 'APPROVED') ? 'verified' : rejected ? 'rejected' : need.some(d => d && d.status === 'PENDING') ? 'pending' : 'none';
   await ex.updateTable('wl_users').set({ ver_status: status, ver_reason: rejected ? rejected.reason : null }).where('id', '=', userId).execute();
   return status;
+}
+
+/* Pay the freelancer for approved work. Stripe: release the held payment. Manual mode (or jobs from
+   before Stripe): credit the balance. Returns false if there was nothing to pay, e.g. it was refunded. */
+async function settle(ref, sellerId, amount) {
+  if (await payments.release(ref)) return true;
+  if (!sellerId || await payments.hasPayment(ref)) return false;
+  await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(amount)}` }).where('id', '=', sellerId).execute();
+  return true;
 }
 
 /* ---------- Bookings ---------- */
@@ -290,7 +321,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       if (u) await db.updateTable('wl_users').set({ google_id: googleId }).where('id', '=', u.id).execute(); // link existing account (Google verified the email)
       else {
         u = await db.insertInto('wl_users')
-          .values({ name: String(claims.name || email.split('@')[0]).slice(0, 60), email, pw_hash: '', google_id: googleId, is_freelancer: saved.intent === 'work' })
+          .values({ name: String(claims.name || email.split('@')[0]).slice(0, 60), email, pw_hash: '', google_id: googleId, is_freelancer: saved.intent === 'work', terms_version: TERMS_VERSION, terms_accepted_at: sql`now()` })
           .returning('id').executeTakeFirstOrThrow();
         created = true;
         mailer.sendWelcome({ email, name: String(claims.name || ''), isFreelancer: saved.intent === 'work' }, publicOrigin(req));
@@ -372,6 +403,12 @@ app.all('/api', upload.single('doc'), async (req, res) => {
   try {
     const user = await me(req);
     const requireLogin = () => { if (!user) bad(res, 'Please log in first.', 401); return user; };
+    // Logged in and has accepted the current Terms of Service.
+    const requireTerms = () => {
+      const u = requireLogin(); if (!u) return null;
+      if (u.terms_version !== TERMS_VERSION) { res.status(403).json({ error: 'Please accept the updated Terms of Service first.', code: 'TERMS' }); return null; }
+      return u;
+    };
     const requireAdmin = () => { if (!user || user.role !== 'admin') { bad(res, 'Admins only.', 403); return null; } return user; };
 
     if (req.method === 'GET' && route === 'bootstrap') return res.json(await bootstrap(user));
@@ -403,13 +440,14 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'auth/register': {
         if (!data.email || !data.password) return bad(res, 'Email and password are required.');
         if (String(data.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
+        if (data.terms !== true) return bad(res, 'Please accept the Terms of Service.');
         // Freelancers fill in their service profile on the onboarding page right after signing up.
         const work = data.intent === 'work', category = (await categoryById(String(data.category || ''))) ? String(data.category) : '';
         try {
           const u = await db.insertInto('wl_users').values({
             name: String(data.name || ''), email: String(data.email).toLowerCase(), pw_hash: passwordHash(String(data.password)),
             title: String(data.title || ''), city: String(data.city || ''), area: String(data.area || ''),
-            is_freelancer: work, category: work ? category : '',
+            is_freelancer: work, category: work ? category : '', terms_version: TERMS_VERSION, terms_accepted_at: sql`now()`,
           }).returning('id').executeTakeFirstOrThrow();
           await login(res, u.id);
           mailer.sendWelcome({ email: String(data.email).toLowerCase(), name: String(data.name || ''), isFreelancer: work }, publicOrigin(req));
@@ -455,7 +493,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         return res.json({ ok: true });
       }
       case 'project/create': {
-        const u = requireLogin(); if (!u) return;
+        const u = requireTerms(); if (!u) return;
         const p = await db.insertInto('wl_projects').values({
           owner_id: u.id, title: String(data.title || ''), category: String(data.category || ''), description: String(data.description || ''),
           budget_min: Number(data.min || 0), budget_max: Number(data.max || 0), deadline: String(data.deadline || ''), skills: json(skillList(data.skills)),
@@ -464,7 +502,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         return res.json({ ok: true, id: sid(p.id) });
       }
       case 'service/create': {
-        const u = requireLogin(); if (!u) return;
+        const u = requireTerms(); if (!u) return;
         const s = await db.insertInto('wl_services').values({
           seller_id: u.id, title: String(data.title || ''), category: String(data.category || ''), emoji: String(data.emoji || '💼'),
           description: String(data.description || ''), packages: json(list(data.packages)),
@@ -472,7 +510,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         return res.json({ ok: true, id: sid(s.id) });
       }
       case 'proposal/create': {
-        const u = requireLogin(); if (!u) return;
+        const u = requireTerms(); if (!u) return;
         try {
           const p = await db.insertInto('wl_proposals').values({
             project_id: Number(data.projectId) || 0, seller_id: u.id, amount: Number(data.amount || 0), days: Number(data.days || 1), cover: String(data.cover || ''),
@@ -483,9 +521,9 @@ app.all('/api', upload.single('doc'), async (req, res) => {
           throw e;
         }
       }
-      case 'proposal/award': return mutateProjectAward(req, res, requireLogin(), data);
+      case 'proposal/award': return mutateProjectAward(req, res, requireTerms(), data);
       case 'project/complete': return mutateProjectComplete(res, requireLogin(), data);
-      case 'order/create': return mutateOrder(req, res, requireLogin(), data);
+      case 'order/create': return mutateOrder(req, res, requireTerms(), data);
       case 'order/deliver': return mutateOrderStatus(res, requireLogin(), data, 'delivered');
       case 'order/accept': return mutateOrderStatus(res, requireLogin(), data, 'completed');
       case 'review/create': {
@@ -577,8 +615,140 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'contact/send':
         await db.insertInto('wl_contacts').values({ name: String(data.name || ''), email: String(data.email || ''), message: String(data.message || '') }).execute();
         return res.json({ ok: true });
+      case 'terms/accept': {
+        const u = requireLogin(); if (!u) return;
+        if (data.version !== TERMS_VERSION) return bad(res, 'The terms have changed. Please reload the page.');
+        await db.updateTable('wl_users').set({ terms_version: TERMS_VERSION, terms_accepted_at: sql`now()` }).where('id', '=', u.id).execute();
+        return res.json({ ok: true });
+      }
+      // A freelancer adds a category that doesn't exist yet. If one with that name does, it's used instead.
+      case 'category/create': {
+        const u = requireTerms(); if (!u) return;
+        if (!u.is_freelancer) return bad(res, 'Only freelancers can add a category.');
+        const name = cleanName(data.name);
+        if (!validCategoryName(name)) return bad(res, 'Please enter a category name of 3 to 40 letters.');
+        if (!['REMOTE', 'ON_SITE', 'HYBRID'].includes(data.serviceType)) return bad(res, 'Please choose where you work.');
+        const found = await findCategoryByName(name);
+        if (found) return res.json({ ok: true, existing: true, id: found.category.id, name: found.category.name, subcategoryId: found.subcategory?.id || null });
+        const onSite = data.serviceType !== 'REMOTE'; // in people's homes: same ID check as other on-site trust categories
+        const id = 'own-' + crypto.randomBytes(6).toString('hex');
+        try {
+          const created = await db.transaction().execute(async trx => {
+            await trx.selectFrom('wl_users').select('id').where('id', '=', u.id).forUpdate().execute();
+            const { n } = await trx.selectFrom('wl_categories').select(eb => eb.fn.countAll().as('n')).where('created_by', '=', u.id).executeTakeFirstOrThrow();
+            if (Number(n) >= MAX_OWN_CATEGORIES) return false;
+            await trx.insertInto('wl_categories').values({
+              id, name, name_et: name, name_ru: name, icon: CATEGORY_ICONS.includes(data.icon) ? data.icon : CATEGORY_ICONS[0], color: CATEGORY_COLORS[u.id % CATEGORY_COLORS.length],
+              service_type: data.serviceType, requires_verification: onSite, required_documents: json(onSite ? ['GOVERNMENT_ID'] : []), sort_order: 1000, status: 'NEW', created_by: u.id,
+            }).execute();
+            for (const a of await trx.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'system', `${u.name} created a new category: ${name}`, '#/admin/categories', trx);
+            return true;
+          });
+          if (!created) return bad(res, `You can create up to ${MAX_OWN_CATEGORIES} categories. Contact us if you need more.`);
+        } catch (e) {
+          if (!isUniqueViolation(e)) throw e; // someone else just created it
+          forgetCategories();
+          const same = await findCategoryByName(name);
+          if (!same) throw e;
+          return res.json({ ok: true, existing: true, id: same.category.id, name: same.category.name, subcategoryId: null });
+        }
+        forgetCategories();
+        return res.json({ ok: true, existing: false, id, name });
+      }
+      case 'admin/category': {
+        if (!requireAdmin()) return;
+        const cat = await categoryById(String(data.id || ''));
+        if (!cat) return bad(res, 'Category not found.', 404);
+        if (data.action === 'merge') { // move everyone to another category and remove this one
+          if (!cat.id.startsWith('own-')) return bad(res, 'Only categories created by freelancers can be merged.');
+          const target = await categoryById(String(data.target || ''));
+          if (!target || target.id === cat.id) return bad(res, 'Please choose another category to merge into.');
+          const moved = await db.transaction().execute(async trx => {
+            const users = await trx.updateTable('wl_users').set({ category: target.id, subcategories: json([]) }).where('category', '=', cat.id).returning('id').execute();
+            for (const t of ['wl_services', 'wl_projects']) await trx.updateTable(t).set({ category: target.id }).where('category', '=', cat.id).execute();
+            await trx.updateTable('wl_bookings').set({ service_category_id: target.id }).where('service_category_id', '=', cat.id).execute();
+            // Keep what they called it as one of their own specialisations.
+            for (const { id } of users) {
+              const row = await trx.selectFrom('wl_users').select('custom_subcategories').where('id', '=', id).executeTakeFirst();
+              await trx.updateTable('wl_users').set({ custom_subcategories: json(cleanList([cat.name, ...list(row.custom_subcategories)], 8)) }).where('id', '=', id).execute();
+              await notify(id, 'system', `Your category “${cat.name}” was merged into “${target.name}”. It is now listed as your specialisation.`, '#/onboarding', trx);
+            }
+            await trx.deleteFrom('wl_categories').where('id', '=', cat.id).execute();
+            return users.map(x => x.id);
+          });
+          forgetCategories();
+          for (const id of moved) await recomputeVerification(id);
+          return res.json({ ok: true, moved: moved.length });
+        }
+        if (data.action !== 'save') return bad(res, 'Unknown action.');
+        const names = { name: cleanName(data.name), name_et: cleanName(data.nameEt), name_ru: cleanName(data.nameRu) };
+        if (!Object.values(names).every(validCategoryName)) return bad(res, 'Names must be 3 to 40 letters.');
+        const needsId = !!data.requiresVerification;
+        try {
+          await db.updateTable('wl_categories').set({ ...names, status: 'APPROVED', requires_verification: needsId,
+            required_documents: json(needsId ? (cat.requiredDocuments.length ? cat.requiredDocuments : ['GOVERNMENT_ID']) : []) }).where('id', '=', cat.id).execute();
+        } catch (e) { if (isUniqueViolation(e)) return bad(res, 'Another category already has that name.'); throw e; }
+        forgetCategories();
+        if (needsId !== cat.requiresVerification) for (const { id } of await db.selectFrom('wl_users').select('id').where('category', '=', cat.id).execute()) await recomputeVerification(id);
+        if (cat.status === 'NEW' && cat.createdBy) await notify(Number(cat.createdBy), 'system', `Your category “${names.name}” was approved.`, '#/onboarding');
+        return res.json({ ok: true });
+      }
+      // The freelancer says the work is done; the client is asked to approve it, which pays them.
+      case 'project/deliver': {
+        const u = requireLogin(); if (!u) return;
+        const pr = await db.selectFrom('wl_projects').selectAll().where('id', '=', Number(data.id) || 0).executeTakeFirst();
+        if (!pr || pr.awarded_to !== u.id) return bad(res, 'Project not found.', 404);
+        const r = await db.updateTable('wl_projects').set({ delivered_at: sql`now()` }).where('id', '=', pr.id).where('status', '=', 'awarded').where('delivered_at', 'is', null).executeTakeFirst();
+        if (!changed(r)) return bad(res, 'This project can’t be marked as done.');
+        await notify(pr.owner_id, 'project', `${u.name} marked “${pr.title}” as done. Please check the work and release the payment.`, `#/project/${pr.id}`);
+        return res.json({ ok: true });
+      }
+      case 'booking/deliver': {
+        const u = requireLogin(); if (!u) return;
+        const b = await getBooking(data.id);
+        if (!b || b.freelancer_id !== u.id) return bad(res, 'Booking not found.', 404);
+        if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as done once it has started.');
+        const r = await db.updateTable('wl_bookings').set({ delivered_at: sql`now()`, updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').where('delivered_at', 'is', null).executeTakeFirst();
+        if (!changed(r)) return bad(res, 'This booking can’t be marked as done.');
+        await notify(b.client_id, 'booking', `${u.name} marked your booking on ${b.booking_date} as done. Please approve it to release the payment.`, '#/dashboard/bookings');
+        return res.json({ ok: true });
+      }
+      // Either side asks Worklay to look at a payment that is still held.
+      case 'payment/problem': {
+        const u = requireLogin(); if (!u) return;
+        const reason = String(data.reason || '').trim().slice(0, 1000);
+        if (reason.length < 10) return bad(res, 'Please describe the problem in a sentence or two.');
+        const pay = await payments.getPayment(Number(data.id) || 0);
+        if (!pay || (pay.buyer_id !== u.id && pay.seller_id !== u.id)) return bad(res, 'Payment not found.', 404);
+        const r = await db.updateTable('wl_payments').set({ problem_reason: reason, problem_by: u.id, problem_at: sql`now()` }).where('id', '=', pay.id).where('status', '=', 'paid').where('problem_at', 'is', null).executeTakeFirst();
+        if (!changed(r)) return bad(res, pay.problem_at ? 'A problem has already been reported for this payment.' : 'This payment is no longer held.');
+        const other = pay.buyer_id === u.id ? pay.seller_id : pay.buyer_id;
+        await notify(other, 'payment', `${u.name} reported a problem with a payment of €${pay.amount}. Worklay will look at it; the money stays held meanwhile.`, '#/dashboard');
+        for (const a of await db.selectFrom('wl_users').select('id').where('role', '=', 'admin').execute()) await notify(a.id, 'payment', `Payment #${pay.id}: ${u.name} reported a problem.`, '#/admin');
+        return res.json({ ok: true });
+      }
+      // An admin decides a held payment: pay the freelancer or refund the client.
+      case 'admin/payment-resolve': {
+        if (!requireAdmin()) return;
+        const pay = await payments.getPayment(Number(data.id) || 0);
+        if (!pay) return bad(res, 'Payment not found.', 404);
+        if (!payments.enabled) return bad(res, 'Card payments are not set up.');
+        if (pay.status !== 'paid') return bad(res, 'This payment is no longer held.');
+        const job = { order: ['wl_orders', pay.order_id, 'completed', 'cancelled', 'orderId'], project: ['wl_projects', pay.project_id, 'completed', 'cancelled', 'projectId'], booking: ['wl_bookings', pay.booking_id, 'COMPLETED', 'CANCELLED', 'bookingId'] }[pay.kind];
+        const [table, jobId, done, cancelled, key] = job;
+        const note = String(data.note || '').trim().slice(0, 300);
+        const release = data.action === 'release';
+        if (!release && data.action !== 'refund') return bad(res, 'Unknown action.');
+        const ok = release ? await payments.release({ [key]: jobId }) : await payments.refund(pay.id, note || 'decided by Worklay');
+        if (!ok) return bad(res, 'This payment is no longer held.');
+        await db.updateTable(table).set({ status: release ? done : cancelled }).where('id', '=', jobId).execute();
+        await notify(pay.seller_id, 'payment', release ? `Worklay released your payment of €${netOf(pay.amount)}.${note ? ' ' + note : ''}` : `Worklay refunded a payment of €${pay.amount} to the client.${note ? ' ' + note : ''}`, '#/dashboard/earnings');
+        if (release) await notify(pay.buyer_id, 'payment', `Worklay released your payment of €${pay.amount} to the freelancer.${note ? ' ' + note : ''}`, '#/dashboard');
+        return res.json({ ok: true });
+      }
       case 'onboarding/save': {
         const u = requireLogin(); if (!u) return;
+        if (data.complete && !requireTerms()) return;
         const p = await cleanProfile(data, u);
         if (data.complete) { const problem = await onboardingProblem(p, u.id); if (problem) return bad(res, problem); }
         await db.updateTable('wl_users').set({ ...p, ...(data.complete ? { is_freelancer: true, onboarding_completed_at: sql`coalesce(onboarding_completed_at, now())` } : {}) })
@@ -614,7 +784,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         return res.json({ ok: true, status });
       }
       case 'booking/create': {
-        const u = requireLogin(); if (!u) return;
+        const u = requireTerms(); if (!u) return;
         const f = await db.selectFrom('wl_users').selectAll().where('id', '=', Number(data.freelancerId) || 0).executeTakeFirst();
         if (!bookable(f)) return bad(res, 'This freelancer is not taking bookings.');
         if (f.id === u.id) return bad(res, 'You can’t book yourself.');
@@ -692,9 +862,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (b.status !== 'CONFIRMED') return bad(res, 'Only confirmed bookings can be marked as completed.');
         if (minutesUntil(b) > 0) return bad(res, 'You can mark the booking as completed once it has started.');
         if (!changed(await db.updateTable('wl_bookings').set({ status: 'COMPLETED', updated_at: sql`now()` }).where('id', '=', b.id).where('status', '=', 'CONFIRMED').executeTakeFirst())) return res.json({ ok: true });
-        // Stripe: release the held payment. Manual mode: credit the freelancer's balance.
-        if (!(await payments.release({ bookingId: b.id }))) await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(b.total_price)}` }).where('id', '=', b.freelancer_id).execute();
-        await notify(b.freelancer_id, 'payment', `The client marked the booking on ${b.booking_date} as completed and released the payment.`, '#/dashboard/earnings');
+        if (await settle({ bookingId: b.id }, b.freelancer_id, b.total_price)) await notify(b.freelancer_id, 'payment', `The client marked the booking on ${b.booking_date} as completed and released the payment.`, '#/dashboard/earnings');
         return res.json({ ok: true });
       }
       case 'admin/payout-paid': {
@@ -719,7 +887,7 @@ async function bootstrap(user) {
   if (payments.enabled) await payments.cleanupAbandoned();
   const none = Promise.resolve([]);
 
-  const [users, orderStats, projectStats, services, projects, proposals, orders, reviews, messages, notifications, wishlist, follows, payouts, posts, paymentList, payoutSummary, bookings, myDocuments, pendingDocuments, categoryList] = await Promise.all([
+  const [users, orderStats, projectStats, services, projects, proposals, orders, reviews, messages, notifications, wishlist, follows, payouts, posts, paymentList, payoutSummary, bookings, myDocuments, pendingDocuments, categoryList, contacts] = await Promise.all([
     db.selectFrom('wl_users').selectAll().orderBy('id').execute(),
     db.selectFrom('wl_orders').select(['seller_id', sql`count(*) filter (where status in ('in_queue', 'delivered'))`.as('in_queue'), sql`count(*) filter (where status = 'completed')`.as('done')]).groupBy('seller_id').execute(),
     db.selectFrom('wl_projects').select(['awarded_to', sql`count(*)`.as('done')]).where('status', '=', 'completed').where('awarded_to', 'is not', null).groupBy('awarded_to').execute(),
@@ -752,6 +920,7 @@ async function bootstrap(user) {
     admin ? db.selectFrom('wl_verification_documents').select(['id', 'user_id', 'document_type', 'file_name', 'mime', 'uploaded_at', sql`data is not null`.as('has_file')])
       .where('status', '=', 'PENDING').orderBy('uploaded_at').execute() : none,
     categories(),
+    admin ? db.selectFrom('wl_contacts').selectAll().orderBy('id', 'desc').limit(200).execute() : none,
   ]);
 
   const oStats = new Map(orderStats.map(r => [r.seller_id, r]));
@@ -764,7 +933,7 @@ async function bootstrap(user) {
         id: sid(u.id), name: u.name, title: u.title, country: u.country, city: u.city, area: u.area,
         bio: u.bio || '', skills: list(u.skills), isFreelancer: u.is_freelancer,
         category: u.category, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
-        specialty: u.specialty, subcategories: list(u.subcategories), serviceAreas: list(u.service_areas), travelRadiusKm: u.travel_radius_km,
+        specialty: u.specialty, subcategories: list(u.subcategories), customSubcategories: list(u.custom_subcategories), serviceAreas: list(u.service_areas), travelRadiusKm: u.travel_radius_km,
         tutorSubjects: list(u.tutor_subjects), tutorLevels: list(u.tutor_levels),
         pricingType: u.pricing_type, priceAmount: u.price_amount, priceUnitLabel: u.price_unit_label, servicePerks: list(u.service_perks),
         weeklyAvailability: u.weekly_availability || {}, slotDurationMinutes: u.slot_duration_minutes, availableForUrgent: u.available_for_urgent,
@@ -776,6 +945,7 @@ async function bootstrap(user) {
       if (self && payoutSummary) out.payouts = payoutSummary;
       if (self || admin) {
         out.email = u.email;
+        out.termsAccepted = u.terms_version === TERMS_VERSION;
         out.verification = { status: u.ver_status, reason: u.ver_reason };
       }
       return out;
@@ -785,7 +955,7 @@ async function bootstrap(user) {
       id: sid(p.id), ownerId: sid(p.owner_id), title: p.title, category: p.category, description: p.description,
       budgetMin: p.budget_min, budgetMax: p.budget_max, deadline: p.deadline, skills: list(p.skills),
       city: p.city, area: p.area, remote: p.remote, status: p.status, awardedTo: sid(p.awarded_to),
-      awardedAmount: p.awarded_amount, proposalCount: p.proposal_count, created: iso(p.created_at),
+      awardedAmount: p.awarded_amount, deliveredAt: p.delivered_at && (p.owner_id === mid || p.awarded_to === mid) ? iso(p.delivered_at) : null, proposalCount: p.proposal_count, created: iso(p.created_at),
     })),
     proposals: proposals.map(p => ({ id: sid(p.id), projectId: sid(p.project_id), sellerId: sid(p.seller_id), amount: p.amount, days: p.days, cover: p.cover, status: p.status, created: iso(p.created_at) })),
     orders: orders.map(o => ({ id: sid(o.id), serviceId: sid(o.service_id), pkg: o.pkg, buyerId: sid(o.buyer_id), sellerId: sid(o.seller_id), price: o.price, status: o.status, created: iso(o.created_at) })),
@@ -794,17 +964,18 @@ async function bootstrap(user) {
     notifications: notifications.map(n => ({ id: sid(n.id), userId: sid(n.user_id), type: n.type, text: n.text, link: n.link, read: n.is_read, date: iso(n.created_at) })),
     wishlist: wishlist.map(w => ({ kind: w.kind, id: sid(w.item_id) })),
     follows: follows.map(f => sid(f.followee)),
-    payouts: payouts.map(p => ({ id: sid(p.id), userId: sid(p.user_id), amount: p.amount, method: p.method, details: p.details, status: p.status, created: iso(p.created_at) })),
+    payouts: payouts.map(p => ({ id: sid(p.id), userId: sid(p.user_id), amount: p.amount, method: p.method, details: p.details, status: p.status, date: iso(p.created_at) })),
     posts: posts.map(p => ({ id: sid(p.id), title: p.title, emoji: p.emoji, color: p.color, excerpt: p.excerpt, body: p.body, created: iso(p.created_at) })),
     payments: paymentList,
     bookings: bookings.map(b => ({
       id: sid(b.id), clientId: sid(b.client_id), freelancerId: sid(b.freelancer_id), categoryId: b.service_category_id,
       date: b.booking_date, start: b.start_time, end: b.end_time, duration: b.duration_minutes, totalPrice: b.total_price,
-      address: b.address, notes: b.notes, status: b.status, cancelledBy: sid(b.cancelled_by), cancelReason: b.cancel_reason, created: iso(b.created_at),
+      address: b.address, notes: b.notes, status: b.status, cancelledBy: sid(b.cancelled_by), cancelReason: b.cancel_reason, deliveredAt: b.delivered_at ? iso(b.delivered_at) : null, created: iso(b.created_at),
     })),
+    contacts: contacts.map(c => ({ id: sid(c.id), name: c.name, email: c.email, message: c.message, date: iso(c.created_at) })),
     myDocuments: myDocuments.map(d => ({ id: sid(d.id), type: d.document_type, status: d.status, reason: d.reason, uploaded: iso(d.uploaded_at) })),
     pendingDocuments: pendingDocuments.map(d => ({ id: sid(d.id), userId: sid(d.user_id), type: d.document_type, fileName: d.file_name, mime: d.mime, uploaded: iso(d.uploaded_at), hasFile: d.has_file })),
-    config: { categories: categoryList, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
+    config: { categories: categoryList, categoryIcons: CATEGORY_ICONS, termsVersion: TERMS_VERSION, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
   };
 }
 
@@ -839,9 +1010,7 @@ async function mutateProjectComplete(res, u, data) {
   if (!p || p.owner_id !== u.id) return bad(res, 'Project owner only.', 403);
   if (p.status !== 'awarded') return bad(res, 'Only projects in progress can be completed.');
   if (!changed(await db.updateTable('wl_projects').set({ status: 'completed' }).where('id', '=', p.id).where('status', '=', 'awarded').executeTakeFirst())) return res.json({ ok: true });
-  // Stripe: release the held payment. Manual mode (or projects awarded before Stripe): credit the balance.
-  if (!(await payments.release({ projectId: p.id })) && p.awarded_to) await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(p.awarded_amount || 0)}` }).where('id', '=', p.awarded_to).execute();
-  if (p.awarded_to) await notify(p.awarded_to, 'payment', 'The customer approved your work and released the payment.', '#/dashboard/earnings');
+  if (await settle({ projectId: p.id }, p.awarded_to, p.awarded_amount || 0)) await notify(p.awarded_to, 'payment', 'The customer approved your work and released the payment.', '#/dashboard/earnings');
   return res.json({ ok: true });
 }
 
@@ -881,9 +1050,7 @@ async function mutateOrderStatus(res, u, data, status) {
   if (!changed(await db.updateTable('wl_orders').set({ status }).where('id', '=', o.id).where('status', 'in', from).executeTakeFirst())) return res.json({ ok: true });
   if (status === 'delivered') await notify(o.buyer_id, 'order', 'Your order was delivered. Please review and approve it.', '#/dashboard/orders');
   if (status === 'completed') {
-    // Stripe: release the held payment. Manual mode (or orders placed before Stripe): credit the balance.
-    if (!(await payments.release({ orderId: o.id }))) await db.updateTable('wl_users').set({ balance: sql`balance + ${netOf(o.price)}` }).where('id', '=', o.seller_id).execute();
-    await notify(o.seller_id, 'payment', 'The buyer approved your delivery and released the payment.', '#/dashboard/earnings');
+    if (await settle({ orderId: o.id }, o.seller_id, o.price)) await notify(o.seller_id, 'payment', 'The buyer approved your delivery and released the payment.', '#/dashboard/earnings');
   }
   return res.json({ ok: true });
 }
