@@ -40,7 +40,7 @@ function App() {
           </div>
           <div><h2 className="footer-heading" data-i18n="footer.platform">Platform</h2><a href="/freelancers" data-i18n="nav.freelancers">Find freelancers</a><a href="/projects" data-i18n="nav.projects">Projects</a><a href="/services" data-i18n="nav.services">Services</a><a href="/post-project" data-i18n="cta.post">Post a project</a></div>
           <div><h2 className="footer-heading" data-i18n="footer.company">Company</h2><a href="/about" data-i18n="nav.about">About</a><a href="/blog" data-i18n="nav.blog">Blog</a><a href="/contact" data-i18n="nav.contact">Contact</a></div>
-          <div><h2 className="footer-heading" data-i18n="footer.legal">Legal</h2><a href="/privacy" data-i18n="legal.privacy">Privacy Policy</a><a href="/cookies" data-i18n="legal.cookies">Cookie Policy</a><button type="button" className="footer-link-btn" data-action="cookie-settings" data-i18n="legal.cookieSettings">Cookie settings</button></div>
+          <div><h2 className="footer-heading" data-i18n="footer.legal">Legal</h2><a href="/terms" data-i18n="legal.terms">Terms of Service</a><a href="/privacy" data-i18n="legal.privacy">Privacy Policy</a><a href="/cookies" data-i18n="legal.cookies">Cookie Policy</a><button type="button" className="footer-link-btn" data-action="cookie-settings" data-i18n="legal.cookieSettings">Cookie settings</button></div>
         </nav>
         <div className="container footer-bottom">© <span id="year"></span> Worklay</div>
       </footer>

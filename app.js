@@ -2,6 +2,7 @@
    `db` holds what the server says the current visitor may see; every change goes
    through the API and then reloads that data. */
 import { privacyPage, cookiesPage } from './legal.js';
+import { termsPage } from './terms-page.js';
 
 (() => {
 'use strict';
@@ -24,7 +25,15 @@ let CATEGORIES = [ // replaced by the server's list (wl_categories) on load
   { id: 'music', name: 'Music & Audio', ico: '🎧', color: '#eaf9f3' },
   { id: 'tutoring', name: 'Tutoring & Lessons', ico: '📚', color: '#fdf1e1' },
 ];
-const catById = id => CATEGORIES.find(c => c.id === id) || CATEGORIES[0];
+const NO_CATEGORY = { id: '', name: 'Other', nameEt: 'Muu', nameRu: 'Другое', ico: '🧩', color: '#eef1ff', serviceType: 'REMOTE', requiresVerification: false, requiredDocuments: [], perks: [], subcategories: [] };
+const catById = id => CATEGORIES.find(c => c.id === id) || NO_CATEGORY;
+// Category or subcategory name in the chosen language. Freelancers can create categories, so always esc() it in HTML.
+const catName = c => (lang === 'et' ? c.nameEt : lang === 'ru' ? c.nameRu : '') || c.name;
+const approvedCats = () => CATEGORIES.filter(c => c.status !== 'NEW');
+// What the current user can pick: approved categories, their own new ones, and the one they're in.
+const pickableCats = (current = '') => CATEGORIES.filter(c => c.status !== 'NEW' || c.id === current || (db && db.me && c.createdBy === db.me));
+const specialisms = u => [...(catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(catName), ...(u.customSubcategories || [])];
+let CATEGORY_ICONS = ['🧩'], TERMS_VERSION = '';
 
 /* ---------- freelancer profile helpers: pricing, weekly hours, tutoring, documents ---------- */
 const WEEKDAYS = [['MON', 'Mon'], ['TUE', 'Tue'], ['WED', 'Wed'], ['THU', 'Thu'], ['FRI', 'Fri'], ['SAT', 'Sat'], ['SUN', 'Sun']];
@@ -116,12 +125,12 @@ const I18N = {
     'hero.verified': 'Kontrollitud vabakutselised', 'hero.idChecked': 'Meie meeskonna poolt kontrollitud', 'hero.proposals': 'Saa pakkumisi kiiresti', 'hero.postFree': 'Postita projekt tasuta',
     'trust.cities': '{cities} linna, {areas} piirkonda', 'trust.nearby': 'Leia abi lähedalt', 'trust.verified': 'Isikutuvastusega spetsialistid', 'trust.documents': 'Dokumendid on kontrollitud', 'trust.pay': 'Maksa pärast töö valmimist', 'trust.release': 'Raha vabastatakse pärast sinu kinnitust', 'trust.free': 'Liitumine on tasuta', 'trust.post': 'Postita projekt tasuta',
     'home.safe': 'Lihtne ja turvaline', 'home.customer': '🧑‍💼 Klientidele', 'home.freelancer': '🛠️ Vabakutselistele',
-    'home.postFree': 'Postita töö tasuta', 'home.describe': 'Kirjelda tööd, eelarvet ja asukohta.', 'home.compare': 'Võrdle pakkumisi', 'home.compareDesc': 'Kohalikud spetsialistid saadavad pakkumisi. Vaata arvustusi ja märke ning vestle enne otsustamist.', 'home.payHappy': 'Maksa, kui oled rahul', 'home.payHappyDesc': 'Kinnita töö ja tasu kantakse vabakutselisele.', 'home.createProfile': 'Loo profiil', 'home.chooseLocation': 'Vali linn ja piirkond, et lähedal asuvad kliendid sind leiaksid.', 'home.offerPackages': 'Paku teenusepakette või saada pakkumisi', 'home.setPrices': 'Määra ise Basicu, Standardi ja Premiumi paketihinnad.', 'home.getPaid': 'Saa tasu', 'home.withdraw': 'Võta teenistus välja PayPali, Payoneeri või pangaülekandega.',
+    'home.postFree': 'Postita töö tasuta', 'home.describe': 'Kirjelda tööd, eelarvet ja asukohta.', 'home.compare': 'Võrdle pakkumisi', 'home.compareDesc': 'Kohalikud spetsialistid saadavad pakkumisi. Vaata arvustusi ja märke ning vestle enne otsustamist.', 'home.payHappy': 'Maksa, kui oled rahul', 'home.payHappyDesc': 'Kinnita töö ja tasu kantakse vabakutselisele.', 'home.createProfile': 'Loo profiil', 'home.chooseLocation': 'Vali linn ja piirkond, et lähedal asuvad kliendid sind leiaksid.', 'home.offerPackages': 'Paku teenusepakette või saada pakkumisi', 'home.setPrices': 'Määra ise Basicu, Standardi ja Premiumi paketihinnad.', 'home.getPaid': 'Saa tasu', 'home.withdraw': 'Kui klient töö kinnitab, kantakse 90% tasust automaatselt sulle.',
     'home.categoriesDesc': 'Leia sobiv tegija kodutöödest veebidisainini.', 'home.available': 'saadaval', 'home.first': 'Ole esimene', 'home.nearbyHead': 'Vabakutselised sinu linnas', 'home.nearbyLocation': 'Vabakutselised sinu lähedal linnas', 'home.pickCity': 'Vali linn, et näha lähedal saadaolevaid tegijaid.', 'home.firstFreelancer': 'Ole üks esimestest vabakutselistest', 'home.joinFreelancer': 'Liitu vabakutselisena', 'home.setupFreelancer': 'Seadista vabakutselise profiil', 'home.profileNearby': 'Loo tasuta profiil, vali linn ja piirkond ning leia lähedal asuvaid kliente.', 'home.readyPackages': 'Valmispaketid selgete hindadega.', 'home.noServices': 'Teenuseid veel pole', 'home.servicesDesc': 'Vabakutselised saavad pakkuda Basicu, Standardi ja Premiumi pakette enda määratud hinnaga.', 'home.jobsDesc': 'Tööd inimestelt, kes vajavad abi.', 'home.needDone': 'Vajad abi?', 'home.postProjectFree': 'Postita projekt tasuta ja saa pakkumisi lähedal asuvatelt vabakutselistelt.', 'home.earnOwn': 'Teeni enda tingimustel', 'home.offerLocal': 'Paku teenuseid enda hinnaga ja leia kliente oma piirkonnast.', 'home.browseProjects': 'Sirvi projekte',
     'chip.cleaning': 'Koristus', 'chip.furniture': 'Mööbli kokkupanek', 'chip.logo': 'Logo kujundus', 'chip.web': 'Veebiarendus', 'chip.translation': 'Tõlge',
     'category.dev': 'Arendus ja IT', 'category.design': 'Disain ja loovtöö', 'category.writing': 'Kirjutamine ja tõlge', 'category.marketing': 'Digiturundus', 'category.video': 'Video ja animatsioon', 'category.business': 'Äri ja haldus', 'category.home': 'Kodu ja remont', 'category.music': 'Muusika ja heli', 'category.tutoring': 'Õpetamine ja eratunnid',
     'category.events': 'Üritused ja fotograafia', 'category.beauty': 'Ilu ja isikuhooldus', 'category.cleaning': 'Kodu ja koristus', 'category.childcare': 'Lapsehoid ja pere', 'category.driving': 'Sõidu- ja veoteenused',
-    'footer.legal': 'Õiguslik', 'legal.privacy': 'Privaatsuspoliitika', 'legal.cookies': 'Küpsiste poliitika', 'legal.cookieSettings': 'Küpsiste seaded',
+    'footer.legal': 'Õiguslik', 'legal.terms': 'Kasutustingimused', 'legal.privacy': 'Privaatsuspoliitika', 'legal.cookies': 'Küpsiste poliitika', 'legal.cookieSettings': 'Küpsiste seaded',
     'cookie.title': 'Sinu privaatsus', 'cookie.text': 'Kasutame ainult küpsiseid, mis on vajalikud sisselogimiseks ja sinu valikute meelespidamiseks. Analüütika- ja reklaamiküpsiseid kasutame ainult sinu nõusolekul.',
     'cookie.accept': 'Nõustu kõigiga', 'cookie.reject': 'Keeldu valikulistest', 'cookie.customize': 'Kohanda', 'cookie.save': 'Salvesta valikud', 'cookie.saved': 'Küpsiste valikud salvestatud',
     'cookie.settingsIntro': 'Vali, milliseid küpsiseid lubad. Hädavajalikud küpsised on alati sees, sest sait ei tööta ilma nendeta.',
@@ -142,22 +151,22 @@ const I18N = {
     'hero.verified': 'Проверенные фрилансеры', 'hero.idChecked': 'Личность проверена нашей командой', 'hero.proposals': 'Быстро получайте предложения', 'hero.postFree': 'Разместите проект бесплатно',
     'trust.cities': 'Городов: {cities}, районов: {areas}', 'trust.nearby': 'Помощь совсем рядом', 'trust.verified': 'Специалисты с проверенной личностью', 'trust.documents': 'Документы проверены нашей командой', 'trust.pay': 'Оплата после выполнения', 'trust.release': 'Деньги переводятся после вашего подтверждения', 'trust.free': 'Регистрация бесплатна', 'trust.post': 'Размещение проектов бесплатно',
     'home.safe': 'Просто и безопасно', 'home.customer': '🧑‍💼 Для заказчиков', 'home.freelancer': '🛠️ Для фрилансеров',
-    'home.postFree': 'Разместите задание бесплатно', 'home.describe': 'Опишите, что нужно сделать, бюджет и место.', 'home.compare': 'Сравните предложения', 'home.compareDesc': 'Местные специалисты присылают предложения. Посмотрите их отзывы и значки и пообщайтесь в чате, прежде чем решить.', 'home.payHappy': 'Платите, когда довольны', 'home.payHappyDesc': 'Подтвердите работу, и оплата перейдёт фрилансеру.', 'home.createProfile': 'Создайте профиль', 'home.chooseLocation': 'Укажите город и район, чтобы заказчики поблизости находили вас первыми.', 'home.offerPackages': 'Предлагайте пакеты или отправляйте предложения', 'home.setPrices': 'Сами устанавливайте цены для пакетов Basic, Standard и Premium.', 'home.getPaid': 'Получайте оплату', 'home.withdraw': 'Выводите заработок через PayPal, Payoneer или банковским переводом.',
+    'home.postFree': 'Разместите задание бесплатно', 'home.describe': 'Опишите, что нужно сделать, бюджет и место.', 'home.compare': 'Сравните предложения', 'home.compareDesc': 'Местные специалисты присылают предложения. Посмотрите их отзывы и значки и пообщайтесь в чате, прежде чем решить.', 'home.payHappy': 'Платите, когда довольны', 'home.payHappyDesc': 'Подтвердите работу, и оплата перейдёт фрилансеру.', 'home.createProfile': 'Создайте профиль', 'home.chooseLocation': 'Укажите город и район, чтобы заказчики поблизости находили вас первыми.', 'home.offerPackages': 'Предлагайте пакеты или отправляйте предложения', 'home.setPrices': 'Сами устанавливайте цены для пакетов Basic, Standard и Premium.', 'home.getPaid': 'Получайте оплату', 'home.withdraw': 'Когда клиент подтвердит работу, 90% оплаты автоматически переводится вам.',
     'home.categoriesDesc': 'От ремонта дома до веб-дизайна: найдите подходящего исполнителя.', 'home.available': 'доступно', 'home.first': 'Станьте первым', 'home.nearbyHead': 'Фрилансеры в вашем городе', 'home.nearbyLocation': 'Фрилансеры рядом с вами в городе', 'home.pickCity': 'Выберите город, чтобы увидеть, кто доступен поблизости.', 'home.firstFreelancer': 'Станьте одним из первых фрилансеров', 'home.joinFreelancer': 'Стать фрилансером', 'home.setupFreelancer': 'Настроить профиль фрилансера', 'home.profileNearby': 'Создайте бесплатный профиль, укажите город и район и получайте заказы от людей поблизости.', 'home.readyPackages': 'Готовые пакеты с понятными ценами.', 'home.noServices': 'Услуг пока нет', 'home.servicesDesc': 'Фрилансеры могут предлагать свои услуги в пакетах Basic, Standard и Premium по своей цене.', 'home.jobsDesc': 'Задания от людей, которым нужна помощь.', 'home.needDone': 'Нужно что-то сделать?', 'home.postProjectFree': 'Разместите проект бесплатно и получите предложения от фрилансеров поблизости.', 'home.earnOwn': 'Готовы зарабатывать на своих условиях?', 'home.offerLocal': 'Предлагайте услуги по своей цене, и заказчики из вашего района найдут вас.', 'home.browseProjects': 'Смотреть проекты',
     'chip.cleaning': 'Уборка', 'chip.furniture': 'Сборка мебели', 'chip.logo': 'Дизайн логотипа', 'chip.web': 'Веб-разработка', 'chip.translation': 'Перевод',
     'category.dev': 'Разработка и IT', 'category.design': 'Дизайн и креатив', 'category.writing': 'Тексты и переводы', 'category.marketing': 'Цифровой маркетинг', 'category.video': 'Видео и анимация', 'category.business': 'Бизнес и администрирование', 'category.home': 'Дом и ремонт', 'category.music': 'Музыка и звук', 'category.tutoring': 'Репетиторство и уроки',
     'category.events': 'Мероприятия и фотосъёмка', 'category.beauty': 'Красота и уход', 'category.cleaning': 'Уборка дома', 'category.childcare': 'Присмотр за детьми и семья', 'category.driving': 'Перевозки и транспорт',
-    'footer.legal': 'Правовая информация', 'legal.privacy': 'Политика конфиденциальности', 'legal.cookies': 'Политика cookie', 'legal.cookieSettings': 'Настройки cookie',
+    'footer.legal': 'Правовая информация', 'legal.terms': 'Условия использования', 'legal.privacy': 'Политика конфиденциальности', 'legal.cookies': 'Политика cookie', 'legal.cookieSettings': 'Настройки cookie',
     'cookie.title': 'Ваша конфиденциальность', 'cookie.text': 'Мы используем только cookie, необходимые для входа в систему и запоминания ваших настроек. Аналитические и рекламные cookie мы будем использовать только с вашего согласия.',
     'cookie.accept': 'Принять все', 'cookie.reject': 'Отклонить необязательные', 'cookie.customize': 'Настроить', 'cookie.save': 'Сохранить выбор', 'cookie.saved': 'Настройки cookie сохранены',
     'cookie.settingsIntro': 'Выберите, какие cookie вы разрешаете. Строго необходимые cookie включены всегда, потому что без них сайт не работает.',
     'cookie.necessary': 'Строго необходимые', 'cookie.necessaryDesc': 'Вход в систему, выбор языка и эти настройки cookie.', 'cookie.alwaysOn': 'Всегда включены',
     'cookie.analytics': 'Аналитика', 'cookie.analyticsDesc': 'Помогает нам понять, как используется сайт. Мы пока не используем инструменты аналитики, поэтому сейчас включение этой опции ничего не меняет.',
     'auth.welcomeBack': 'С возвращением', 'auth.loginSub': 'Войдите в свой аккаунт', 'auth.join': 'Присоединяйтесь к Worklay', 'auth.joinSub': 'Создайте бесплатный аккаунт',
-    'auth.googleContinue': 'Продолжить с Google', 'auth.googleSignup': 'Зарегистрироваться через Google', 'auth.googleTerms': 'Продолжая с Google, вы принимаете Условия использования и подтверждаете ознакомление с {privacy}.', 'auth.privacyLink': 'Политикой конфиденциальности', 'auth.or': 'или',
+    'auth.googleContinue': 'Продолжить с Google', 'auth.googleSignup': 'Зарегистрироваться через Google', 'auth.googleTerms': 'Продолжая с Google, вы принимаете {terms} и подтверждаете ознакомление с {privacy}.', 'auth.privacyLink': 'Политикой конфиденциальности', 'auth.or': 'или',
     'auth.email': 'Электронная почта', 'auth.password': 'Пароль', 'auth.noAccount': 'Нет аккаунта?', 'auth.haveAccount': 'Уже есть аккаунт?', 'auth.show': 'Показать', 'auth.hide': 'Скрыть',
     'auth.iWant': 'Я хочу', 'auth.hire': 'Нанимать фрилансеров', 'auth.work': 'Работать фрилансером', 'auth.fullName': 'Имя и фамилия', 'auth.mainCategory': 'Основная категория услуг', 'auth.whatDo': 'Чем вы занимаетесь?', 'auth.whatDoPh': 'например, фотограф, няня',
-    'auth.nextSteps': 'Далее вы укажете цены, часы работы и, для некоторых услуг, загрузите удостоверение личности для проверки.', 'auth.pwPh': 'Не менее 8 символов', 'auth.terms': 'Я принимаю Условия использования и подтверждаю ознакомление с {privacy}', 'auth.create': 'Создать аккаунт',
+    'auth.nextSteps': 'Далее вы укажете цены, часы работы и, для некоторых услуг, загрузите удостоверение личности для проверки.', 'auth.pwPh': 'Не менее 8 символов', 'auth.terms': 'Я принимаю {terms} и подтверждаю ознакомление с {privacy}', 'auth.create': 'Создать аккаунт',
     'auth.welcomeBackName': 'С возвращением, {name}!', 'auth.createdWork': 'Аккаунт создан! Теперь настройте профиль услуг.', 'auth.createdHire': 'Аккаунт создан! Разместите свой первый проект.', 'auth.createdGoogle': 'Аккаунт создан через Google! Укажите город и район, чтобы люди поблизости могли вас найти.',
     'auth.googleDisabled': 'Вход через Google сейчас недоступен.', 'auth.googleState': 'Время входа через Google истекло. Попробуйте ещё раз.', 'auth.googleCancelled': 'Вход через Google отменён.', 'auth.googleUnverified': 'Ваш адрес электронной почты в Google не подтверждён, поэтому мы не можем использовать его для входа.', 'auth.googleFailed': 'Не удалось войти через Google. Попробуйте ещё раз.',
     'loc.city': 'Город', 'loc.area': 'Район', 'loc.selectCity': 'Выберите город', 'loc.selectArea': 'Выберите район', 'loc.allAreas': 'Все районы',
@@ -176,23 +185,23 @@ const EN = {
   'hero.verified': 'Verified freelancers', 'hero.idChecked': 'ID checked by our team', 'hero.proposals': 'Get proposals fast', 'hero.postFree': 'Post a project for free',
   'trust.cities': '{cities} cities, {areas} areas', 'trust.nearby': 'Find help right around the corner', 'trust.verified': 'ID-verified professionals', 'trust.documents': 'Documents checked by our team', 'trust.pay': "Pay when it's done", 'trust.release': 'Released after you approve the work', 'trust.free': 'Free to join', 'trust.post': 'Post projects at no cost',
   'home.safe': 'Simple & safe', 'home.customer': '🧑‍💼 For customers', 'home.freelancer': '🛠️ For freelancers',
-  'home.postFree': 'Post your job for free', 'home.describe': 'Describe what you need, your budget and where it is.', 'home.compare': 'Compare proposals', 'home.compareDesc': 'Local professionals send offers. Check their reviews and badges, and chat before you decide.', 'home.payHappy': "Pay when you're happy", 'home.payHappyDesc': 'Approve the work and payment is released to the freelancer.', 'home.createProfile': 'Create your profile', 'home.chooseLocation': 'Choose your city and area so nearby customers find you first.', 'home.offerPackages': 'Offer packages or send proposals', 'home.setPrices': 'Set your own prices in Basic, Standard and Premium tiers.', 'home.getPaid': 'Get paid', 'home.withdraw': 'Withdraw your earnings via PayPal, Payoneer or bank transfer.',
+  'home.postFree': 'Post your job for free', 'home.describe': 'Describe what you need, your budget and where it is.', 'home.compare': 'Compare proposals', 'home.compareDesc': 'Local professionals send offers. Check their reviews and badges, and chat before you decide.', 'home.payHappy': "Pay when you're happy", 'home.payHappyDesc': 'Approve the work and payment is released to the freelancer.', 'home.createProfile': 'Create your profile', 'home.chooseLocation': 'Choose your city and area so nearby customers find you first.', 'home.offerPackages': 'Offer packages or send proposals', 'home.setPrices': 'Set your own prices in Basic, Standard and Premium tiers.', 'home.getPaid': 'Get paid', 'home.withdraw': 'When the client approves the work, 90% of the price is sent to you automatically.',
   'home.categoriesDesc': 'From home repairs to web design: find the right person for the job.', 'home.available': 'available', 'home.first': 'Be the first', 'home.nearbyHead': 'Find freelancers in your city', 'home.nearbyLocation': 'Freelancers near you in', 'home.pickCity': "Pick a city to see who's available nearby.", 'home.firstFreelancer': 'Be one of the first freelancers', 'home.joinFreelancer': 'Join as a freelancer', 'home.setupFreelancer': 'Set up my freelancer profile', 'home.profileNearby': 'Create a free profile, choose your city and area, and start getting jobs from people nearby.', 'home.readyPackages': 'Ready-made packages with clear prices.', 'home.noServices': 'No services yet', 'home.servicesDesc': 'Freelancers can offer their work in Basic, Standard and Premium packages at their own price.', 'home.jobsDesc': 'Jobs posted by people who need a hand.', 'home.needDone': 'Need something done?', 'home.postProjectFree': 'Post your project for free and get proposals from freelancers near you.', 'home.earnOwn': 'Ready to earn on your own terms?', 'home.offerLocal': 'Offer your services at your own price and get found by customers in your area.', 'home.browseProjects': 'Browse projects',
   'chip.cleaning': 'Cleaning', 'chip.furniture': 'Furniture assembly', 'chip.logo': 'Logo design', 'chip.web': 'Web development', 'chip.translation': 'Translation',
   'category.dev': 'Development & IT', 'category.design': 'Design & Creative', 'category.writing': 'Writing & Translation', 'category.marketing': 'Digital Marketing', 'category.video': 'Video & Animation', 'category.business': 'Business & Admin', 'category.home': 'Home & Handyman', 'category.music': 'Music & Audio', 'category.tutoring': 'Tutoring & Lessons',
   'category.events': 'Events & Photography', 'category.beauty': 'Beauty & Personal Care', 'category.cleaning': 'Home & Cleaning', 'category.childcare': 'Childcare & Family', 'category.driving': 'Driving & Transport',
   'hero.titleHtml': 'Find trusted <span class="hl">local professionals</span> for any job',
-  'footer.legal': 'Legal', 'legal.privacy': 'Privacy Policy', 'legal.cookies': 'Cookie Policy', 'legal.cookieSettings': 'Cookie settings',
+  'footer.legal': 'Legal', 'legal.terms': 'Terms of Service', 'legal.privacy': 'Privacy Policy', 'legal.cookies': 'Cookie Policy', 'legal.cookieSettings': 'Cookie settings',
   'cookie.title': 'Your privacy', 'cookie.text': 'We only use cookies that are needed to log you in and remember your choices. We will only use analytics or advertising cookies if you agree.',
   'cookie.accept': 'Accept all', 'cookie.reject': 'Reject optional', 'cookie.customize': 'Customize', 'cookie.save': 'Save choices', 'cookie.saved': 'Cookie choices saved',
   'cookie.settingsIntro': 'Choose which cookies you allow. Strictly necessary cookies are always on because the site cannot work without them.',
   'cookie.necessary': 'Strictly necessary', 'cookie.necessaryDesc': 'Login, language preference and these cookie choices.', 'cookie.alwaysOn': 'Always on',
   'cookie.analytics': 'Analytics', 'cookie.analyticsDesc': 'Helps us understand how the site is used. We don’t use any analytics tools yet, so turning this on changes nothing for now.',
   'auth.welcomeBack': 'Welcome back', 'auth.loginSub': 'Log in to your account', 'auth.join': 'Join Worklay', 'auth.joinSub': 'Create your free account',
-  'auth.googleContinue': 'Continue with Google', 'auth.googleSignup': 'Sign up with Google', 'auth.googleTerms': 'By continuing with Google you agree to the Terms of Service and have read the {privacy}.', 'auth.privacyLink': 'Privacy Policy', 'auth.or': 'or',
+  'auth.googleContinue': 'Continue with Google', 'auth.googleSignup': 'Sign up with Google', 'auth.googleTerms': 'By continuing with Google you agree to the {terms} and have read the {privacy}.', 'auth.privacyLink': 'Privacy Policy', 'auth.or': 'or',
   'auth.email': 'Email', 'auth.password': 'Password', 'auth.noAccount': 'Don’t have an account?', 'auth.haveAccount': 'Already have an account?', 'auth.show': 'Show', 'auth.hide': 'Hide',
   'auth.iWant': 'I want to', 'auth.hire': 'Hire freelancers', 'auth.work': 'Work as a freelancer', 'auth.fullName': 'Full name', 'auth.mainCategory': 'Main service category', 'auth.whatDo': 'What do you do?', 'auth.whatDoPh': 'e.g. Photographer, Babysitter',
-  'auth.nextSteps': 'Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.', 'auth.pwPh': 'At least 8 characters', 'auth.terms': 'I agree to the Terms of Service and have read the {privacy}', 'auth.create': 'Create account',
+  'auth.nextSteps': 'Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.', 'auth.pwPh': 'At least 8 characters', 'auth.terms': 'I agree to the {terms} and have read the {privacy}', 'auth.create': 'Create account',
   'auth.welcomeBackName': 'Welcome back, {name}!', 'auth.createdWork': 'Account created! Now set up your service profile.', 'auth.createdHire': 'Account created! Post your first project.', 'auth.createdGoogle': 'Account created with Google! Add your city and area so people nearby can find you.',
   'auth.googleDisabled': 'Sign-in with Google is not available right now.', 'auth.googleState': 'Your Google sign-in expired. Please try again.', 'auth.googleCancelled': 'Google sign-in was cancelled.', 'auth.googleUnverified': 'Your Google email address is not verified, so we can’t use it to sign you in.', 'auth.googleFailed': 'Google sign-in failed. Please try again.',
   'loc.city': 'City', 'loc.area': 'Area', 'loc.selectCity': 'Select city', 'loc.selectArea': 'Select area', 'loc.allAreas': 'All areas',
@@ -336,14 +345,14 @@ async function api(route, data) {
   let res, json;
   try { res = await fetch(apiUrl(route), opts); } catch (e) { throw new Error('Cannot reach the server. Check your internet connection.'); }
   try { json = await res.json(); } catch (e) { throw new Error('The server returned an unexpected response.'); }
-  if (!res.ok) throw new Error(json.error || 'Something went wrong.');
+  if (!res.ok) throw Object.assign(new Error(json.error || 'Something went wrong.'), { code: json.code });
   return json;
 }
 async function refresh() {
   db = await api('bootstrap');
   if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments;
     if (db.config.categories) CATEGORIES = db.config.categories.map(c => ({ ...c, ico: c.icon }));
-    if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
+    if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; CATEGORY_ICONS = db.config.categoryIcons || CATEGORY_ICONS; TERMS_VERSION = db.config.termsVersion || ''; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
 }
 // Run an API call, reload data, re-render. Shows server errors as a toast (or in errEl).
 let busy = false;
@@ -361,7 +370,8 @@ async function act(route, data, okMsg, { errEl, after } = {}) {
     if (okMsg) toast(okMsg, 'success');
     return r;
   } catch (e) {
-    if (errEl) errEl.textContent = e.message; else toast(esc(e.message), 'error');
+    if (e.code === 'TERMS') openTerms();
+    else if (errEl) errEl.textContent = e.message; else toast(esc(e.message), 'error');
     return null;
   } finally { busy = false; if (btn) btn.classList.remove('loading'); }
 }
@@ -409,7 +419,7 @@ function statPills(id) {
   const s = userStats(id);
   return `<div class="stat-pills"><span class="pill blue"><b>${s.inQueue}</b>In Queue Service</span><span class="pill teal"><b>${s.doneProjects}</b>Complete Project</span><span class="pill amber"><b>${s.doneServices}</b>Complete Service</span></div>`;
 }
-const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>', awaiting_payment: '<span class="tag orange">Awaiting payment</span>', processing: '<span class="tag">Payment processing</span>', released: '<span class="tag orange">Waiting for payout setup</span>', transferring: '<span class="tag">Sending…</span>', transferred: '<span class="tag green">Sent to Stripe</span>', refunded: '<span class="tag gray">Refunded</span>', cancelled: '<span class="tag gray">Cancelled</span>', AWAITING_PAYMENT: '<span class="tag orange">Awaiting payment</span>', PENDING: '<span class="tag">Waiting for confirmation</span>', CONFIRMED: '<span class="tag green">Confirmed</span>', COMPLETED: '<span class="tag gray">Completed</span>', CANCELLED: '<span class="tag gray">Cancelled</span>', APPROVED: '<span class="tag green">Approved</span>', REJECTED: '<span class="tag orange">Rejected</span>' }[st] || esc(st));
+const statusTag = st => ({ open: '<span class="tag green">Open</span>', awarded: '<span class="tag orange">In progress</span>', completed: '<span class="tag gray">Completed</span>', pending: '<span class="tag">Pending</span>', accepted: '<span class="tag green">Accepted</span>', rejected: '<span class="tag gray">Not selected</span>', in_queue: '<span class="tag">In queue</span>', delivered: '<span class="tag orange">Delivered</span>', paid: '<span class="tag green">Paid</span>', awaiting_payment: '<span class="tag orange">Awaiting payment</span>', processing: '<span class="tag">Payment processing</span>', released: '<span class="tag orange">Waiting for payout setup</span>', transferring: '<span class="tag">Sending…</span>', transferred: '<span class="tag green">Sent to Stripe</span>', refunding: '<span class="tag">Refunding…</span>', refunded: '<span class="tag gray">Refunded</span>', cancelled: '<span class="tag gray">Cancelled</span>', AWAITING_PAYMENT: '<span class="tag orange">Awaiting payment</span>', PENDING: '<span class="tag">Waiting for confirmation</span>', CONFIRMED: '<span class="tag green">Confirmed</span>', COMPLETED: '<span class="tag gray">Completed</span>', CANCELLED: '<span class="tag gray">Cancelled</span>', APPROVED: '<span class="tag green">Approved</span>', REJECTED: '<span class="tag orange">Rejected</span>' }[st] || esc(st));
 
 function serviceCard(s) {
   const u = user(s.sellerId), r = serviceRating(s.id);
@@ -422,14 +432,14 @@ function serviceCard(s) {
       <div class="small">${stars(r.avg, r.n)}${u.city ? ` · <span class="muted">📍 ${esc(locStr(u))}</span>` : ''}</div>
       ${proxTag(u) ? `<div>${proxTag(u)}</div>` : ''}
     </div>
-    <div class="svc-foot"><span class="tag gray">${esc(catById(s.category).name)}</span><span>From <span class="price">${money(s.packages[0].price)}</span></span></div>
+    <div class="svc-foot"><span class="tag gray">${esc(catName(catById(s.category)))}</span><span>From <span class="price">${money(s.packages[0].price)}</span></span></div>
   </div>`;
 }
 function projectCard(p) {
   const owner = user(p.ownerId), n = p.proposalCount;
   return `<div class="card proj-card">
     <button class="heart ${inWishlist('project', p.id) ? 'on' : ''}" data-action="wish" data-kind="project" data-id="${p.id}" aria-label="Save to wishlist">${inWishlist('project', p.id) ? '♥' : '♡'}</button>
-    <div style="display:flex;gap:8px">${statusTag(p.status)} <span class="tag gray">${esc(catById(p.category).name)}</span></div>
+    <div style="display:flex;gap:8px">${statusTag(p.status)} <span class="tag gray">${esc(catName(catById(p.category)))}</span></div>
     <h3><a href="#/project/${p.id}">${esc(p.title)}</a></h3>
     <p class="muted small" style="margin:0">${esc(p.description.slice(0, 130))}${p.description.length > 130 ? '…' : ''}</p>
     <div class="proj-meta"><span>💶 <b>${money(p.budgetMin)}–${money(p.budgetMax)}</b></span><span>⏱ ${esc(p.deadline)}</span><span>📨 ${n} proposal${n === 1 ? '' : 's'}</span></div>
@@ -502,7 +512,7 @@ function openAuth(mode = 'login', intent = 'hire') {
       <h2 style="margin:8px 0 0">${mode === 'login' ? t('auth.welcomeBack') : t('auth.join')}</h2><p class="muted" style="margin:4px 0 0">${mode === 'login' ? t('auth.loginSub') : t('auth.joinSub')}</p></div>
     <div class="tabs" style="width:100%;margin-bottom:18px"><button style="flex:1" class="${mode === 'login' ? 'active' : ''}" data-action="auth-tab" data-mode="login">${t('cta.login')}</button><button style="flex:1" class="${mode === 'signup' ? 'active' : ''}" data-action="auth-tab" data-mode="signup">${t('cta.signup')}</button></div>
     ${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? t('auth.googleContinue') : t('auth.googleSignup')}</button>
-      <p class="small muted" style="text-align:center;margin:8px 0 0">${t('auth.googleTerms').replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</p>
+      <p class="small muted" style="text-align:center;margin:8px 0 0">${t('auth.googleTerms').replace('{terms}', `<a href="#/terms" data-action="close-modal">${t('legal.terms')}</a>`).replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</p>
       <div class="auth-divider"><span>${t('auth.or')}</span></div>` : ''}
     ${mode === 'login' ? `<form id="login-form">
       <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
@@ -515,12 +525,12 @@ function openAuth(mode = 'login', intent = 'hire') {
         <label class="choice"><input type="radio" name="intent" value="work" ${intent === 'work' ? 'checked' : ''}><span class="big-ico">🛠️</span> ${t('auth.work')}</label></div></div>
       <div class="field"><label>${t('auth.fullName')}</label><input name="name" required maxlength="60" autocomplete="name"></div>
       ${locationFields('', '', { required: true })}
-      <div class="fl-only"><div class="row"><div class="field"><label>${t('auth.mainCategory')}</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.ico} ${t(`category.${c.id}`)}</option>`).join('')}</select></div>
+      <div class="fl-only"><div class="row"><div class="field"><label>${t('auth.mainCategory')}</label><select name="category">${approvedCats().map(c => `<option value="${c.id}">${c.ico} ${esc(catName(c))}</option>`).join('')}<option value="">🧩 ${{ et: 'Muu / loon oma kategooria', ru: 'Другое / создам свою категорию' }[lang] || 'Other / I’ll create my own'}</option></select></div>
         <div class="field"><label>${t('auth.whatDo')}</label><input name="title" maxlength="60" placeholder="${esc(t('auth.whatDoPh'))}"></div></div>
         <p class="small muted" style="margin-top:-6px">${t('auth.nextSteps')}</p></div>
       <div class="field"><label>${t('auth.email')}</label><input name="email" type="email" required autocomplete="email"></div>
       <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'new-password', `minlength="8" placeholder="${esc(t('auth.pwPh'))}"`)}</div>
-      <label class="filter-opt small"><input type="checkbox" name="terms" required> ${t('auth.terms').replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</label>
+      <label class="filter-opt small"><input type="checkbox" name="terms" required> ${t('auth.terms').replace('{terms}', `<a href="#/terms" data-action="close-modal">${t('legal.terms')}</a>`).replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</label>
       ${err}<button class="btn btn-primary btn-block">${t('auth.create')}</button>
       <p class="small muted" style="text-align:center">${t('auth.haveAccount')} <a href="#" data-action="auth-tab" data-mode="login">${t('cta.login')}</a></p></form>`}`, m => {
     const errEl = $('.auth-err', m);
@@ -532,7 +542,7 @@ function openAuth(mode = 'login', intent = 'hire') {
     };
     if (sf) sf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(sf), work = f.get('intent') === 'work';
-      const title = (f.get('title') || '').trim() || catById(f.get('category')).name + ' freelancer';
+      const title = (f.get('title') || '').trim() || (f.get('category') ? catById(f.get('category')).name + ' freelancer' : 'Freelancer');
       act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
         closeModal(); OB = null; go(work ? '#/onboarding' : '#/post-project'); render();
         toast(work ? t('auth.createdWork') : t('auth.createdHire')); } });
@@ -540,6 +550,13 @@ function openAuth(mode = 'login', intent = 'hire') {
   });
 }
 
+// Asks a logged-in user to accept the current Terms of Service.
+function openTerms() {
+  modal(`<h2>Our Terms of Service were updated</h2>
+    <ul class="muted"><li>The client pays up front and Worklay holds the money until the work is done.</li><li>When the client approves the work, the freelancer is paid automatically.</li><li>Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs, taken from the freelancer’s share.</li></ul>
+    <p><a href="/terms" target="_blank" rel="noopener">Read the full ${t('legal.terms')}</a></p>
+    <button class="btn btn-primary btn-block" data-action="terms-accept">I agree to the Terms of Service</button>`);
+}
 function openProposal(pid) {
   const p = project(pid);
   modal(`<h2>Submit a proposal</h2><p class="muted">${esc(p.title)}<br>Budget ${money(p.budgetMin)}–${money(p.budgetMax)}</p>
@@ -716,7 +733,7 @@ V.home = () => {
 
   <section class="section" style="padding-top:0"><div class="container">
     <div class="section-head"><div><h2>${t('home.cats')}</h2><p>${t('home.categoriesDesc')}</p></div></div>
-    <div class="cat-grid">${CATEGORIES.map(c => { const n = catCount(c.id); return `<a class="cat" href="#/freelancers?cat=${c.id}"><span class="ico" style="background:${c.color}">${c.ico}</span><div><b>${t(`category.${c.id}`)}</b><span>${n ? n + ' ' + t('home.available') : t('home.first')}</span></div></a>`; }).join('')}</div>
+    <div class="cat-grid">${approvedCats().map(c => { const n = catCount(c.id); return `<a class="cat" href="#/freelancers?cat=${c.id}"><span class="ico" style="background:${c.color}">${c.ico}</span><div><b>${esc(catName(c))}</b><span>${n ? n + ' ' + t('home.available') : t('home.first')}</span></div></a>`; }).join('')}</div>
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
@@ -740,14 +757,15 @@ V.home = () => {
 };
 
 function filterSidebar(kind, q) {
-  const cats = (q.cat || '').split(',').filter(Boolean);
+  const cats = (q.cat || '').split(',').filter(Boolean), subs = (q.sub || '').split(',').filter(Boolean);
   const u = me();
   return `<aside class="filters"><form id="filters">
     <label>Search</label><input name="q" value="${esc(q.q || '')}" placeholder="Keywords">
     <h4>📍 Location</h4>${locationFields(q.city || '', q.area || '', { any: true })}
     ${u && u.city ? `<button type="button" class="btn btn-outline btn-sm btn-block" data-action="near-me">Near me (${esc(locStr(u))})</button>` : ''}
     ${kind === 'projects' ? `<label class="filter-opt"><input type="checkbox" name="remote" value="1" ${q.remote ? 'checked' : ''}> Include remote projects</label>` : ''}
-    <h4>Category</h4>${CATEGORIES.map(c => `<label class="filter-opt"><input type="checkbox" name="cat" value="${c.id}" ${cats.includes(c.id) ? 'checked' : ''}> ${c.ico} ${c.name}</label>`).join('')}
+    <h4>Category</h4>${CATEGORIES.filter(c => c.status !== 'NEW' || cats.includes(c.id) || db.users.some(x => x.isFreelancer && x.category === c.id)).map(c => `<div class="cat-filter"><label class="filter-opt"><input type="checkbox" name="cat" value="${c.id}" ${cats.includes(c.id) ? 'checked' : ''}> ${c.ico} ${esc(catName(c))}</label>
+      ${kind === 'freelancers' && c.subcategories.length ? `<div class="sub-filter">${c.subcategories.map(x => `<label class="filter-opt small"><input type="checkbox" name="sub" value="${x.id}" ${subs.includes(x.id) ? 'checked' : ''}> ${esc(catName(x))}</label>`).join('')}</div>` : ''}</div>`).join('')}
     ${kind === 'freelancers' ? `<h4>📚 Tutoring</h4>
       <select name="subject"><option value="">Any subject</option>${[...new Set([...TUTOR_SUBJECTS, ...db.users.flatMap(x => x.tutorSubjects || [])])].map(x => `<option ${q.subject === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <select name="level" style="margin-top:8px"><option value="">Any class / level</option>${[...new Set([...TUTOR_LEVELS, ...db.users.flatMap(x => x.tutorLevels || [])])].map(x => `<option ${q.level === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
@@ -758,11 +776,18 @@ function filterSidebar(kind, q) {
     <button class="btn btn-primary btn-block" style="margin-top:14px">Apply filters</button>
     <a class="btn btn-ghost btn-block btn-sm" href="#/${kind}">Clear</a></form></aside>`;
 }
+const subById = id => CATEGORIES.flatMap(c => c.subcategories || []).find(x => x.id === id);
+// A subcategory only narrows its own category: picking "Nails" doesn't hide people from other chosen categories.
+function matchSubs(u, subs) {
+  const own = (catById(u.category).subcategories || []).map(x => x.id).filter(id => subs.includes(id));
+  return !own.length || own.some(id => u.subcategories.includes(id));
+}
 function activeFilters(kind, q) {
   const chips = [];
   if (q.q) chips.push(['q', '', `“${q.q}”`]);
   if (q.city) chips.push(['city', '', '📍 ' + (q.area ? q.area + ', ' : '') + q.city]);
-  (q.cat || '').split(',').filter(Boolean).forEach(c => chips.push(['cat', c, catById(c).ico + ' ' + catById(c).name]));
+  (q.cat || '').split(',').filter(Boolean).forEach(c => chips.push(['cat', c, catById(c).ico + ' ' + catName(catById(c))]));
+  (q.sub || '').split(',').filter(Boolean).forEach(id => { const x = subById(id); if (x) chips.push(['sub', id, catName(x)]); });
   if (q.min) chips.push(['min', '', 'From €' + q.min]);
   if (q.max) chips.push(['max', '', 'Up to €' + q.max]);
   if (q.verified) chips.push(['verified', '', '✓ Verified only']);
@@ -795,16 +820,16 @@ function freelancerCard(u) {
     <div class="proj-meta"><span>📍 <b>${esc(locStr(u) || 'Location not set')}</b>${u.serviceAreas.filter(a => a !== u.area).length ? ` <span class="muted">+${u.serviceAreas.filter(a => a !== u.area).length} areas</span>` : ''}</span>${proxTag(u)}</div>
     ${weeklyText(u.weeklyAvailability) ? `<div class="small muted">🕒 ${esc(weeklyText(u.weeklyAvailability))}${u.availableForUrgent ? ' · ⚡ same-day' : ''}</div>` : ''}
     <div class="small">${stars(st.rating, st.reviews)} · ${st.doneProjects + st.doneServices} jobs done</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">${(u.tutorSubjects.length ? u.tutorSubjects : u.skills).slice(0, 3).map(s => `<span class="tag gray">${esc(s)}</span>`).join('')}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${[...new Set([...specialisms(u), ...u.tutorSubjects, ...u.skills])].slice(0, 4).map(s => `<span class="tag gray">${esc(s)}</span>`).join('')}</div>
     <div class="list-item" style="padding:10px 0 0;border:0"><span>${priceText(u) ? `<b class="price">${priceText(u)}</b>` : from ? `from <b>${money(from)}</b>` : ''}</span>
       <span style="display:flex;gap:6px"><a class="btn btn-outline btn-sm" href="#/messages/${u.id}">💬</a><a class="btn btn-primary btn-sm" href="#/user/${u.id}">View profile</a></span></div>
   </div>`;
 }
 
 V.freelancers = (_, q) => {
-  const cats = (q.cat || '').split(',').filter(Boolean);
-  const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category))
-    && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' '), (catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(x => x.name).join(' ')) && (!q.min || u.priceAmount >= +q.min) && (!q.max || u.priceAmount <= +q.max) && (!q.verified || u.verification.status === 'verified')
+  const cats = (q.cat || '').split(',').filter(Boolean), subs = (q.sub || '').split(',').filter(Boolean);
+  const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category)) && matchSubs(u, subs)
+    && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' '), specialisms(u).join(' '), catName(catById(u.category)), catById(u.category).name) && (!q.min || u.priceAmount >= +q.min) && (!q.max || u.priceAmount <= +q.max) && (!q.verified || u.verification.status === 'verified')
     && (!q.subject || u.tutorSubjects.includes(q.subject)) && (!q.level || u.tutorLevels.includes(q.level)) && (!q.time || worksDuring(u, q.time)) && (!q.urgent || u.availableForUrgent))
     .sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating);
   return `<div class="page-head"><div class="container"><h1>Find freelancers${locHeading(q)}</h1><p>Hire trusted local professionals by city and area — or work with anyone remotely.</p></div></div>
@@ -847,7 +872,7 @@ V.service = ([id], q) => {
   const own = me() && me().id === u.id;
   const feat = (on) => on ? '<span class="ok">✓</span>' : '<span class="no">✕</span>';
   return `<div class="container detail"><div>
-    <div class="small muted"><a href="#/services">Services</a> › <a href="#/services?cat=${s.category}">${esc(catById(s.category).name)}</a></div>
+    <div class="small muted"><a href="#/services">Services</a> › <a href="#/services?cat=${s.category}">${esc(catName(catById(s.category)))}</a></div>
     <h1 style="margin-top:10px">${esc(s.title)}</h1>
     <div class="seller-line"><a href="#/user/${u.id}" class="seller-line">${avatar(u, 'sm')} <b>${esc(u.name)}</b></a> ${u.verification.status === 'verified' ? '<span class="verified">✓ Verified</span>' : ''} · ${stars(r.avg, r.n)}</div>
     <div class="detail-cover" style="background:${s.color}">${s.emoji}</div>
@@ -882,14 +907,15 @@ V.project = ([id]) => {
   const props = db.proposals.filter(x => x.projectId === p.id);
   const mine = u && props.find(x => x.sellerId === u.id);
   let action = '';
-  if (isOwner && p.status === 'awarded') action = `<button class="btn btn-primary btn-block" data-action="complete-project" data-id="${p.id}">Mark complete & release ${money(p.awardedAmount)}</button><p class="small muted">Release payment once the job objectives are met.</p>`;
+  if (isOwner && p.status === 'awarded') action = `<button class="btn btn-primary btn-block" data-action="complete-project" data-id="${p.id}">Approve & release ${money(p.awardedAmount)}</button><p class="small muted">${p.deliveredAt ? `The freelancer marked this as done ${ago(p.deliveredAt)}. Check the work, then release the payment.` : 'Release the payment once the work is done.'}</p>${payNote('project', p.id)}`;
+  else if (u && p.awardedTo === u.id && p.status === 'awarded') action = (p.deliveredAt ? '<p class="muted">You marked this as done. Waiting for the client’s approval.</p>' : `<button class="btn btn-primary btn-block" data-action="project-deliver" data-id="${p.id}">Work is done</button><p class="small muted">The client is asked to check the work and release the payment.</p>`) + payNote('project', p.id);
   else if (isOwner) action = `<p class="muted">You posted this project.</p>`;
   else if (mine) action = `<p>Your proposal: <b>${money(mine.amount)}</b> ${statusTag(mine.status)}</p>`;
   else if (p.status === 'open') action = `<button class="btn btn-primary btn-block" data-action="propose" data-id="${p.id}">Submit a proposal</button>`;
   else action = `<p class="muted">This project is no longer accepting proposals.</p>`;
   const showProps = isOwner ? props : props.filter(x => u && x.sellerId === u.id);
   return `<div class="container detail"><div>
-    <div class="small muted"><a href="#/projects">Projects</a> › ${esc(catById(p.category).name)}</div>
+    <div class="small muted"><a href="#/projects">Projects</a> › ${esc(catName(catById(p.category)))}</div>
     <h1 style="margin-top:10px">${esc(p.title)}</h1>
     <div style="display:flex;gap:8px;margin-bottom:16px">${statusTag(p.status)}<span class="tag gray">Posted ${ago(p.created)}</span></div>
     <div class="card card-pad"><h3>Project details</h3><p style="white-space:pre-line">${esc(p.description)}</p>
@@ -923,7 +949,7 @@ V.user = ([id]) => {
   return `<div class="container" style="padding-top:36px">
     <div class="profile-card">${avatar(u, 'lg')}
       <div style="flex:1;min-width:240px"><h1 style="margin:0">${esc(u.name)}</h1>${badges(u)}${u.isFreelancer && u.verification.status === 'pending' ? '<span class="tag orange" style="margin-left:6px">⏳ Verification pending</span>' : ''}
-        <div><b>${esc(u.title)}</b>${u.isFreelancer && u.category ? ` · <span class="muted">${catById(u.category).ico} ${esc((catById(u.category).subcategories || []).filter(x => u.subcategories.includes(x.id)).map(x => x.name).join(', ') || catById(u.category).name)}</span>` : ''}</div><div class="muted small">📍 ${esc(locStr(u) || u.country || 'Location not set')} ${proxTag(u)} · ${u.isFreelancer && priceText(u) ? `<b>${priceText(u)}</b> · ` : ''}Member since ${monthYear(u.joined)} · ${followers} follower${followers === 1 ? '' : 's'}</div>
+        <div><b>${esc(u.title)}</b>${u.isFreelancer && u.category ? ` · <span class="muted">${catById(u.category).ico} ${esc(catName(catById(u.category)))}</span>` : ''}</div><div class="muted small">📍 ${esc(locStr(u) || u.country || 'Location not set')} ${proxTag(u)} · ${u.isFreelancer && priceText(u) ? `<b>${priceText(u)}</b> · ` : ''}Member since ${monthYear(u.joined)} · ${followers} follower${followers === 1 ? '' : 's'}</div>
         ${statPills(u.id)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${own ? '<a class="btn btn-outline" href="#/dashboard/settings">Edit profile</a>' : `<button class="btn ${isFollowing(u.id) ? 'on' : 'btn-primary'}" data-action="follow" data-id="${u.id}">${isFollowing(u.id) ? '✓ ' + t('common.following') : '+ ' + t('common.follow')}</button><a class="btn btn-outline" href="#/messages/${u.id}">💬 ${t('common.message')}</a>`}</div>
     </div>
@@ -934,6 +960,7 @@ V.user = ([id]) => {
       ${rv.length ? rv.map(x => { const f = user(x.from); return `<div class="review">${avatar(f, 'sm')}<div><b>${esc(f.name)}</b> <span class="stars">${'★'.repeat(x.rating)}</span> <span class="muted small">${ago(x.date)}</span><p style="margin:4px 0 0">${esc(x.text)}</p></div></div>`; }).join('') : '<p class="muted">No reviews yet.</p>'}
     </div><aside>${u.isFreelancer && u.onboarded && !own ? bookCard(u) : ''}<div class="card card-pad">
       ${u.isFreelancer ? `${u.specialty ? `<h3>Speciality</h3><p style="margin:0 0 20px">${esc(u.specialty)}</p>` : ''}
+        ${specialisms(u).length ? `<h3>Specialises in</h3><div class="detail-list" style="margin-bottom:20px">${specialisms(u).map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
         ${u.tutorSubjects.length ? `<h3>📚 Teaches</h3><div class="detail-list">${u.tutorSubjects.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
           ${u.tutorLevels.length ? `<div class="detail-list" style="margin-bottom:20px">${u.tutorLevels.map(x => `<span class="tag gray">🎓 ${esc(x)}</span>`).join('')}</div>` : '<div style="margin-bottom:20px"></div>'}` : ''}
         ${weeklyText(u.weeklyAvailability) ? `<h3>🕒 Available</h3><p style="margin:0 0 20px">${esc(weeklyText(u.weeklyAvailability))}${u.availableForUrgent ? '<br><span class="small muted">⚡ Takes same-day bookings</span>' : ''}</p>` : ''}
@@ -949,7 +976,7 @@ V.postProject = () => {
   return `<div class="page-head"><div class="container"><h1>${t('cta.post')}</h1><p>Tell professionals what you need. They'll get in touch with proposals.</p></div></div>
   <div class="container" style="max-width:760px;padding-top:30px"><form class="card card-pad" id="project-form">
     <div class="field"><label>Project title</label><input name="title" required maxlength="100" placeholder="e.g. Design a logo for my bakery"></div>
-    <div class="field"><label>Category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Category</label><select name="category">${pickableCats().map(c => `<option value="${c.id}">${c.ico} ${esc(catName(c))}</option>`).join('')}</select></div>
     <div class="field"><label>Description</label><textarea name="description" required minlength="30" placeholder="Describe the task, what you expect to receive and any important details."></textarea></div>
     <div class="row3"><div class="field"><label>Min budget (€)</label><input name="min" type="number" min="5" required></div><div class="field"><label>Max budget (€)</label><input name="max" type="number" min="5" required></div><div class="field"><label>Deadline</label><input name="deadline" required placeholder="e.g. 2 weeks"></div></div>
     <div class="field"><label>Skills (comma separated)</label><input name="skills" placeholder="Logo design, Illustrator"></div>
@@ -964,7 +991,7 @@ V.postService = () => {
   return `<div class="page-head"><div class="container"><h1>Offer a service</h1><p>Set your own price in up to three packages.</p></div></div>
   <div class="container" style="max-width:900px;padding-top:30px"><form class="card card-pad" id="service-form">
     <div class="field"><label>Service title</label><input name="title" required maxlength="90" placeholder="I will…"></div>
-    <div class="row"><div class="field"><label>Category</label><select name="category">${CATEGORIES.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select></div>
+    <div class="row"><div class="field"><label>Category</label><select name="category">${pickableCats().map(c => `<option value="${c.id}">${c.ico} ${esc(catName(c))}</option>`).join('')}</select></div>
     <div class="field"><label>Cover icon</label><select name="emoji">${['💻', '📱', '🎨', '🖌️', '✍️', '🌍', '📈', '🎬', '🎧', '💼', '🛠️', '📷'].map(e => `<option>${e}</option>`).join('')}</select></div></div>
     <div class="field"><label>Description</label><textarea name="description" required minlength="30"></textarea></div>
     <h3>Packages</h3><div class="table-wrap"><table class="pkg-table"><thead><tr><th></th>${defaults.map(d => `<th>${d[0]}</th>`).join('')}</tr></thead><tbody>
@@ -991,7 +1018,7 @@ V.dashboard = ([tab = 'overview']) => {
     if (asSeller && o.status === 'in_queue') btn = `<button class="btn btn-primary btn-sm" data-action="deliver" data-id="${o.id}">Mark delivered</button>`;
     if (!asSeller && o.status === 'delivered') btn = `<button class="btn btn-primary btn-sm" data-action="accept-order" data-id="${o.id}">Approve & release payment</button>`;
     if (!asSeller && o.status === 'completed' && !reviewed) btn = `<button class="btn btn-outline btn-sm" data-action="review-order" data-id="${o.id}">Leave review</button>`;
-    return `<div class="list-item"><div><a href="#/service/${s.id}"><b>${esc(s.title)}</b></a><div class="small muted">${esc(s.packages[o.pkg].name)} · ${asSeller ? 'Buyer' : 'Seller'}: ${esc(other.name)} · ${ago(o.created)}</div></div>
+    return `<div class="list-item"><div><a href="#/service/${s.id}"><b>${esc(s.title)}</b></a><div class="small muted">${esc(s.packages[o.pkg].name)} · ${asSeller ? 'Buyer' : 'Seller'}: ${esc(other.name)} · ${ago(o.created)}</div>${payNote('order', o.id)}</div>
       <div style="display:flex;gap:10px;align-items:center"><b>${money(o.price)}</b>${statusTag(o.status)}<a class="btn btn-ghost btn-sm" href="#/messages/${other.id}">💬</a>${btn}</div></div>`; };
   let body = '';
   // Getting-started checklist (different steps for freelancers and customers)
@@ -1021,7 +1048,7 @@ V.dashboard = ([tab = 'overview']) => {
   if (tab === 'orders') body = `<h1>My orders</h1><div class="card card-pad">${myOrders.length ? myOrders.map(o => orderRow(o, false)).join('') : empty('🛒', 'You haven’t bought any services yet.', '<a class="btn btn-primary" href="#/services">Browse services</a>')}</div>`;
   if (tab === 'selling') body = `<div class="section-head"><h1 style="margin:0">Selling</h1><a class="btn btn-primary btn-sm" href="#/post-service">+ New service</a></div>
     <div class="card card-pad" style="margin-bottom:20px"><h3>Orders received</h3>${selling.length ? selling.map(o => orderRow(o, true)).join('') : '<p class="muted">No orders yet.</p>'}</div>
-    <div class="card card-pad"><h3>Awarded projects</h3>${db.projects.filter(p => p.awardedTo === u.id).map(p => `<div class="list-item"><a href="#/project/${p.id}"><b>${esc(p.title)}</b></a><div style="display:flex;gap:10px;align-items:center"><b>${money(p.awardedAmount)}</b>${statusTag(p.status)}</div></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
+    <div class="card card-pad"><h3>Awarded projects</h3>${db.projects.filter(p => p.awardedTo === u.id).map(p => `<div class="list-item"><div><a href="#/project/${p.id}"><b>${esc(p.title)}</b></a>${payNote('project', p.id)}</div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.awardedAmount)}</b>${statusTag(p.status)}${p.status === 'awarded' && !p.deliveredAt ? `<button class="btn btn-primary btn-sm" data-action="project-deliver" data-id="${p.id}">Work is done</button>` : ''}</div></div>`).join('') || '<p class="muted">None yet.</p>'}</div>
     <h3 style="margin-top:24px">My services</h3><div class="grid">${db.services.filter(s => s.sellerId === u.id).map(serviceCard).join('') || '<p class="muted">You haven’t listed a service yet.</p>'}</div>`;
   if (tab === 'proposals') body = `<h1>My proposals</h1><div class="card card-pad">${myProps.length ? myProps.map(x => { const p = project(x.projectId); return `<div class="list-item"><div><a href="#/project/${p.id}"><b>${esc(p.title)}</b></a><div class="small muted">${money(x.amount)} · ${x.days} days · sent ${ago(x.created)}</div></div>${statusTag(x.status)}</div>`; }).join('') : empty('📨', 'No proposals sent yet.', '<a class="btn btn-primary" href="#/projects">Find projects</a>')}</div>`;
   if (tab === 'earnings' && CARD_PAYMENTS) body = stripeEarnings(u);
@@ -1037,7 +1064,7 @@ V.dashboard = ([tab = 'overview']) => {
       <label class="btn btn-primary btn-sm">${u.avatarUrl ? 'Change photo' : 'Upload photo'}<input type="file" id="photo-input" accept="image/jpeg,image/png,image/webp" hidden></label>
       ${u.avatarUrl ? '<button class="btn btn-ghost btn-sm" type="button" data-action="photo-remove">Remove</button>' : ''}</div></div>` : ''}
     ${u.isFreelancer ? `<div class="card card-pad service-summary"><div><h3 style="margin:0 0 4px">${catById(u.category).ico} Service profile</h3>
-      <div class="small muted">${u.onboarded ? `${esc(catById(u.category).name)} · ${priceText(u) || 'no price yet'} · ${esc(weeklyText(u.weeklyAvailability) || 'no hours set')}` : 'Not finished yet: customers can’t book you until it is.'}</div></div>
+      <div class="small muted">${u.onboarded ? `${esc(catName(catById(u.category)))} · ${priceText(u) || 'no price yet'} · ${esc(weeklyText(u.weeklyAvailability) || 'no hours set')}` : 'Not finished yet: customers can’t book you until it is.'}</div></div>
       <a class="btn ${u.onboarded ? 'btn-outline' : 'btn-primary'} btn-sm" href="#/onboarding">${u.onboarded ? 'Edit category, prices & hours' : 'Finish setup'}</a></div>` : ''}
     <form class="card card-pad" id="settings-form">
     <div class="row"><div class="field"><label>Name</label><input name="name" value="${esc(u.name)}" required></div><div class="field"><label>Email</label><input name="email" type="email" value="${esc(u.email)}" required></div></div>
@@ -1098,13 +1125,15 @@ V.wishlist = () => {
 V.admin = ([sub] = []) => {
   const u = me(); if (!u || u.role !== 'admin') return `<div class="container">${empty('⛔', 'Admins only. Log in with an administrator account.', '<button class="btn btn-primary" data-action="login">Log in</button>')}</div>`;
   if (sub === 'verifications') return adminVerifications();
+  if (sub === 'categories') return adminCategories();
   const pending = db.pendingDocuments || [], pays = db.payouts.filter(p => p.status === 'pending');
   const gmv = (db.adminStats || {}).gmv || 0;
   return `<div class="container" style="padding-top:36px"><h1>Admin panel</h1>
     <div class="kpis"><div class="kpi"><div class="muted small">Users</div><div class="v">${db.users.length}</div></div><div class="kpi"><div class="muted small">Services</div><div class="v">${db.services.length}</div></div><div class="kpi"><div class="muted small">Projects</div><div class="v">${db.projects.length}</div></div><div class="kpi"><div class="muted small">Gross volume</div><div class="v">${money(gmv)}</div></div></div>
     <div class="card card-pad" style="margin-bottom:20px"><div class="list-item" style="padding:0;border:0"><div><h3 style="margin:0">Verification queue</h3><div class="small muted">${pending.length} document${pending.length === 1 ? '' : 's'} from ${new Set(pending.map(d => d.userId)).size} freelancer${new Set(pending.map(d => d.userId)).size === 1 ? '' : 's'} waiting for review</div></div><a class="btn btn-primary btn-sm" href="#/admin/verifications">Open queue</a></div></div>
-    ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Refunds and disputes are handled in the <a href="https://dashboard.stripe.com/payments" target="_blank" rel="noopener">Stripe dashboard</a>.</p>
-      ${(db.payments || []).length ? db.payments.slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : p.kind === 'booking' ? 'Booking' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div></div><div style="display:flex;gap:10px;align-items:center"><b>${money(p.amount)}</b>${statusTag(p.status)}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
+    <div class="card card-pad" style="margin-bottom:20px"><div class="list-item" style="padding:0;border:0"><div><h3 style="margin:0">Categories</h3><div class="small muted">${CATEGORIES.filter(c => c.status === 'NEW').length} new from freelancers, waiting for a look</div></div><a class="btn btn-primary btn-sm" href="#/admin/categories">Open categories</a></div></div>
+    ${CARD_PAYMENTS ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Card payments (${(db.payments || []).length})</h3><p class="small muted" style="margin-top:-4px">Held payments can be released or refunded here. Reported problems come first.</p>
+      ${(db.payments || []).length ? [...db.payments].sort((a, b) => (b.problem && b.status === 'paid' ? 1 : 0) - (a.problem && a.status === 'paid' ? 1 : 0)).slice(0, 50).map(p => `<div class="list-item"><div><b>#${p.id}</b> ${esc(user(p.buyerId).name)} → ${esc(user(p.sellerId).name)}<div class="small muted">${p.kind === 'order' ? 'Service order' : p.kind === 'booking' ? 'Booking' : 'Project'} · fee ${money(p.fee)} · ${ago(p.created)}</div>${p.problem ? `<div class="small" style="margin-top:4px"><span class="tag orange">Problem</span> ${esc((user(p.problem.by) || {}).name || '')}: ${esc(p.problem.reason)}</div>` : ''}</div><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${money(p.amount)}</b>${statusTag(p.status)}${p.status === 'paid' ? `<button class="btn btn-outline btn-sm" data-action="pay-refund" data-id="${p.id}">Refund client</button><button class="btn btn-primary btn-sm" data-action="pay-release" data-id="${p.id}">Pay freelancer</button>` : ''}</div></div>`).join('') : '<p class="muted">No payments yet.</p>'}</div>` : ''}
     <div class="card card-pad" style="margin-bottom:20px"><h3>Payout requests (${pays.length})</h3>
       ${pays.length ? pays.map(p => `<div class="list-item"><div><b>${esc(user(p.userId).name)}</b> — ${money(p.amount)} via ${esc(p.method)}<div class="small muted">${esc(p.details)} · ${ago(p.date)}</div></div><button class="btn btn-primary btn-sm" data-action="mark-paid" data-id="${p.id}">Mark as paid</button></div>`).join('') : '<p class="muted">No pending payouts.</p>'}</div>
     <div class="card card-pad"><h3>Contact form messages (${db.contacts.length})</h3>${db.contacts.length ? db.contacts.map(c => `<div class="list-item"><div><b>${esc(c.name)}</b> <span class="muted small">${esc(c.email)} · ${ago(c.date)}</span><p style="margin:4px 0 0">${esc(c.message)}</p></div></div>`).join('') : '<p class="muted">No messages.</p>'}</div></div>`;
@@ -1112,7 +1141,7 @@ V.admin = ([sub] = []) => {
 
 V.about = () => `<div class="page-head"><div class="container"><h1>About Worklay</h1><p>A marketplace built on trust, fair prices and simple tools.</p></div></div>
   <div class="prose"><p>Worklay is a platform that connects people who need help with tasks and projects with freelancers and professionals looking for work. Post what you need and receive proposals, or choose a ready-made service package at a clear price.</p>
-  <p>We verify identities, hold payments until job objectives are met, and pay professionals out through PayPal, Payoneer or bank transfer.</p></div>
+  <p>The client pays up front and we hold the money until the work is done. When the client approves the work, the freelancer is paid automatically. Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs; posting projects and creating an account are free. See our <a href="#/terms">Terms of Service</a>.</p></div>
   <div class="container about-grid">
     <div class="step"><div class="step-icon" style="background:#e3f8ee">🛡️</div><h3>Verified members</h3><p class="muted">Admins check passports, driving licenses and ID cards before awarding the verified badge.</p></div>
     <div class="step"><div class="step-icon" style="background:#eef1ff">💬</div><h3>Built-in messaging</h3><p class="muted">Discuss scope and proposals directly, then review and rate completed work.</p></div>
@@ -1137,7 +1166,7 @@ V.notFound = () => `<div class="container">${empty('🧭', 'Page not found.', '<
 let OB = null; // the profile being edited, kept between steps
 function obInit(u) {
   if (OB && OB.userId === u.id) return;
-  OB = { userId: u.id, category: u.category || '', subcategories: [...u.subcategories], title: u.title || '', specialty: u.specialty || '',
+  OB = { userId: u.id, category: u.category || '', subcategories: [...u.subcategories], customSubcategories: [...(u.customSubcategories || [])], skills: [...u.skills], newCat: false, title: u.title || '', specialty: u.specialty || '',
     city: u.city || '', area: u.area || '', serviceAreas: [...u.serviceAreas], travelRadiusKm: u.travelRadiusKm || 15,
     tutorSubjects: [...u.tutorSubjects], tutorLevels: [...u.tutorLevels], pricingType: u.pricingType || 'HOURLY', priceAmount: u.priceAmount || '',
     priceUnitLabel: u.priceUnitLabel || '', servicePerks: [...u.servicePerks], weeklyAvailability: JSON.parse(JSON.stringify(u.weeklyAvailability || {})),
@@ -1150,7 +1179,7 @@ function obRead() {
   const form = $('#ob-form'); if (!form || !OB || form.tagName !== 'FORM') return; // step 4 has no fields of its own
   const f = new FormData(form), step = form.dataset.step;
   if (step === '1') {
-    OB.category = f.get('category') || OB.category; OB.subcategories = f.getAll('subcategories'); OB.title = (f.get('title') || '').trim(); OB.specialty = (f.get('specialty') || '').trim();
+    OB.category = f.get('category') || OB.category; OB.subcategories = f.getAll('subcategories'); OB.customSubcategories = splitList(f.get('customSubcategories')); OB.skills = splitList(f.get('skills')); OB.title = (f.get('title') || '').trim(); OB.specialty = (f.get('specialty') || '').trim();
     if (form.querySelector('[name="city"]')) { OB.city = f.get('city') || ''; OB.area = f.get('area') || ''; OB.travelRadiusKm = +f.get('travelRadiusKm') || 15; OB.serviceAreas = [...new Set([...f.getAll('areas'), OB.area].filter(Boolean))]; }
     if (form.querySelector('[name="subjectsOther"]')) { OB.tutorSubjects = [...f.getAll('subjects'), ...splitList(f.get('subjectsOther'))]; OB.tutorLevels = [...f.getAll('levels'), ...splitList(f.get('levelsOther'))]; }
   }
@@ -1181,8 +1210,18 @@ V.onboarding = (_, q) => {
   if (q.welcome === 'google') setTimeout(() => toast('Account created with Google! Now set up your service profile.', 'success'), 50);
   let body = '';
   if (step === '1') body = `<h2>What do you offer?</h2>
-    <div class="cat-pick">${CATEGORIES.map(c => `<label class="cat-opt"><input type="radio" name="category" value="${c.id}" data-rerender ${OB.category === c.id ? 'checked' : ''}><span class="ico" style="background:${c.color}">${c.ico}</span><span><b>${esc(c.name)}</b><small>${SERVICE_TYPES[c.serviceType] || ''}${c.requiresVerification ? ' · 🛡️ ID check' : ''}</small></span></label>`).join('')}</div>
-    ${cat && cat.subcategories.length ? `<div class="field"><label>Which services exactly?</label><div class="chks">${cat.subcategories.map(x => chk('subcategories', x.id, esc(x.name), OB.subcategories.includes(x.id))).join('')}</div></div>` : ''}
+    <div class="cat-pick">${pickableCats(OB.category).map(c => `<label class="cat-opt"><input type="radio" name="category" value="${c.id}" data-rerender ${OB.category === c.id ? 'checked' : ''}><span class="ico" style="background:${c.color}">${c.ico}</span><span><b>${esc(catName(c))}</b><small>${SERVICE_TYPES[c.serviceType] || ''}${c.requiresVerification ? ' · 🛡️ ID check' : ''}</small></span></label>`).join('')}
+      <button type="button" class="cat-opt cat-new" data-action="ob-newcat" aria-expanded="${!!OB.newCat}"><span class="ico" style="background:#eef1ff">➕</span><span><b>Create my own category</b><small>Nothing here fits what you do?</small></span></button></div>
+    ${OB.newCat ? `<div class="card card-pad new-cat"><h3 style="margin:0 0 10px">Create your own category</h3>
+      <div class="row"><div class="field"><label>Category name</label><input name="newCatName" maxlength="40" placeholder="e.g. Bicycle repair"></div>
+        <div class="field"><label>Where do you work?</label><select name="newCatType"><option value="ON_SITE">At the client’s place</option><option value="HYBRID">Online or at the client’s place</option><option value="REMOTE">Online only</option></select></div></div>
+      <div class="field"><label>Icon</label><div class="icon-pick">${CATEGORY_ICONS.map((x, i) => `<label><input type="radio" name="newCatIcon" value="${x}" aria-label="Icon ${i + 1}" ${i ? '' : 'checked'}><span>${x}</span></label>`).join('')}</div></div>
+      <p class="small muted">You can list yourself in it straight away. If you work at clients’ places, we check your ID before anyone can book you. Worklay may rename the category or merge it with a similar one.</p>
+      <button type="button" class="btn btn-primary btn-sm" data-action="ob-createcat">Create category</button> <button type="button" class="btn btn-ghost btn-sm" data-action="ob-newcat">Cancel</button></div>` : ''}
+    ${cat && cat.subcategories.length ? `<div class="field"><label>Which services exactly?</label><div class="chks">${cat.subcategories.map(x => chk('subcategories', x.id, esc(catName(x)), OB.subcategories.includes(x.id))).join('')}</div></div>` : ''}
+    ${cat ? `<div class="row"><div class="field"><label>Your own specialisations</label><input name="customSubcategories" value="${esc(OB.customSubcategories.join(', '))}" placeholder="e.g. Vintage furniture, Smart home setup"></div>
+      <div class="field"><label>Skills</label><input name="skills" value="${esc(OB.skills.join(', '))}" placeholder="e.g. Photoshop, First aid, Driving licence B"></div></div>
+      <p class="small muted" style="margin-top:-6px">Separate with commas. Clients can search for all of these.</p>` : ''}
     <div class="row"><div class="field"><label>Headline</label><input name="title" maxlength="60" value="${esc(OB.title)}" placeholder="e.g. Wedding photographer"></div>
       <div class="field"><label>Your speciality</label><input name="specialty" maxlength="80" value="${esc(OB.specialty)}" placeholder="e.g. Natural-light portraits, Evening babysitting"></div></div>
     ${cat && cat.id === 'tutoring' ? `<div class="field"><label>Subjects you teach</label><div class="chks">${TUTOR_SUBJECTS.map(x => chk('subjects', x, esc(x), OB.tutorSubjects.includes(x))).join('')}</div>
@@ -1207,7 +1246,7 @@ V.onboarding = (_, q) => {
     <div class="row" style="margin-top:16px"><div class="field"><label>Booking slot length</label><select name="slotDurationMinutes">${SLOT_MINUTES.map(m => `<option value="${m}" ${OB.slotDurationMinutes === m ? 'selected' : ''}>${durationText(m)}</option>`).join('')}</select>
       <p class="small muted" style="margin:6px 0 0">${OB.pricingType === 'HOURLY' ? 'Clients can book one or more slots in a row.' : 'Each booking takes one slot, e.g. a 4-hour shoot.'}</p></div>
       <div class="field"><label>&nbsp;</label><label class="filter-opt"><input type="checkbox" name="availableForUrgent" value="1" ${OB.availableForUrgent ? 'checked' : ''}> ⚡ Available for same-day urgent bookings</label></div></div>`;
-  if (step === '4') body = `<h2>Verify your identity</h2><p class="muted">Clients trust ${esc(cat.name.toLowerCase())} providers with their homes, families or journeys, so Worklay checks your documents before anyone can book you. You can finish setting up now; bookings open as soon as we’ve approved them.</p>${verificationPanel(u, cat)}`;
+  if (step === '4') body = `<h2>Verify your identity</h2><p class="muted">Clients trust ${esc(catName(cat).toLowerCase())} providers with their homes, families or journeys, so Worklay checks your documents before anyone can book you. You can finish setting up now; bookings open as soon as we’ve approved them.</p>${verificationPanel(u, cat)}`;
   return `<div class="container onboarding"><div class="ob-head"><h1>Set up your service profile</h1>
     <ol class="stepper">${steps.map(([n, l], i) => `<li class="${n === step ? 'active' : steps.findIndex(x => x[0] === step) > i ? 'done' : ''}"><button type="button" data-action="ob-step" data-step="${n}"><span>${i + 1}</span>${l}</button></li>`).join('')}</ol></div>
     ${step === '4' /* holds its own upload forms, and forms can't be nested */ ? `<div class="card card-pad" id="ob-form" data-step="4">${body}</div>` : `<form class="card card-pad" id="ob-form" data-step="${step}">${body}</form>`}
@@ -1277,6 +1316,22 @@ function drawBooking() {
   $('#bk-request').textContent = slot ? `Request booking · ${money(BK.price)}` : 'Pick a time';
 }
 
+/* ---------- held payments: what both sides see, and problem reports ---------- */
+const payFor = (kind, id) => (db.payments || []).find(p => p.kind === kind && p[kind + 'Id'] === id && !['pending', 'cancelled'].includes(p.status));
+function payNote(kind, id) {
+  const p = payFor(kind, id), u = me(); if (!p || !u) return '';
+  const seller = p.sellerId === u.id, party = seller || p.buyerId === u.id;
+  const text = { paid: `🔒 ${money(p.amount)} is held by Worklay until the work is done${seller ? `. You’ll receive ${money(p.net)}` : ''}.`, released: seller ? `${money(p.net)} was released to you and is waiting for <a href="#/dashboard/earnings">payout setup</a> or the transfer.` : 'Payment released to the freelancer.',
+    transferring: 'Payment is being sent to the freelancer.', transferred: seller ? `✓ ${money(p.net)} was sent to your Stripe account.` : '✓ Payment sent to the freelancer.', refunding: 'The payment is being refunded.', refunded: 'The payment was refunded.' }[p.status] || '';
+  const problem = p.status !== 'paid' || !party ? '' : p.problem ? ' <span class="tag orange">Problem reported: Worklay is looking at it</span>' : ` <button type="button" class="link-btn" data-action="pay-problem" data-id="${p.id}">Report a problem</button>`;
+  return text ? `<div class="small muted pay-note">${text}${problem}</div>` : '';
+}
+function openProblem(id) {
+  modal(`<h2>Report a problem</h2><p class="muted">The money stays held. Worklay will look at what happened and contact you both if needed.</p>
+    <form id="problem-form" data-id="${esc(id)}"><div class="field"><label>What went wrong?</label><textarea name="reason" required minlength="10" maxlength="1000" placeholder="e.g. The work wasn’t finished, or the other person doesn’t reply."></textarea></div>
+    <p class="auth-err" role="alert" style="color:#d92d50;margin:0 0 8px;font-size:.9rem"></p><button class="btn btn-primary btn-block">Send to Worklay</button></form>`);
+}
+
 /* ---------- bookings dashboard tab ---------- */
 function bookingsTab(u) {
   const received = db.bookings.filter(b => b.freelancerId === u.id), mine = db.bookings.filter(b => b.clientId === u.id);
@@ -1285,13 +1340,14 @@ function bookingsTab(u) {
   const row = (b, asFreelancer) => { const other = user(asFreelancer ? b.clientId : b.freelancerId), cat = catById(b.categoryId);
     let btns = '';
     if (asFreelancer && b.status === 'PENDING') btns = `<button class="btn btn-primary btn-sm" data-action="bk-confirm" data-id="${b.id}">Confirm</button><button class="btn btn-outline btn-sm" data-action="bk-decline" data-id="${b.id}">Decline</button>`;
-    else if (asFreelancer && b.status === 'CONFIRMED' && !bookingStarted(b)) btns = `<button class="btn btn-ghost btn-sm" data-action="bk-cancel" data-id="${b.id}">Cancel</button>`;
-    else if (!asFreelancer && b.status === 'CONFIRMED' && bookingStarted(b)) btns = `<button class="btn btn-primary btn-sm" data-action="bk-complete" data-id="${b.id}">Mark as completed</button>`;
+    else if (asFreelancer && b.status === 'CONFIRMED' && bookingStarted(b)) btns = b.deliveredAt ? '<span class="small muted">Waiting for the client’s approval</span>' : `<button class="btn btn-primary btn-sm" data-action="bk-deliver" data-id="${b.id}">Work is done</button>`;
+    else if (asFreelancer && b.status === 'CONFIRMED') btns = `<button class="btn btn-ghost btn-sm" data-action="bk-cancel" data-id="${b.id}">Cancel</button>`;
+    else if (!asFreelancer && b.status === 'CONFIRMED' && bookingStarted(b)) btns = `<button class="btn btn-primary btn-sm" data-action="bk-complete" data-id="${b.id}">${b.deliveredAt ? 'Approve & release payment' : 'Mark as completed'}</button>`;
     else if (!asFreelancer && ['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(b.status)) btns = `<button class="btn btn-ghost btn-sm" data-action="bk-cancel" data-id="${b.id}">Cancel</button>`;
     return `<div class="booking-row"><div class="when"><b>${fmtDate(b.date, { day: 'numeric' })}</b><small>${fmtDate(b.date, { month: 'short' })}</small></div>
-      <div style="flex:1;min-width:200px"><div><b>${b.start}–${b.end}</b> · ${fmtDate(b.date, { weekday: 'long' })} · ${cat.ico} ${esc(cat.name)}</div>
+      <div style="flex:1;min-width:200px"><div><b>${b.start}–${b.end}</b> · ${fmtDate(b.date, { weekday: 'long' })} · ${cat.ico} ${esc(catName(cat))}</div>
         <div class="small"><a href="#/user/${other.id}">${avatar(other, 'sm')} ${esc(other.name)}</a> · 📍 ${esc(b.address)}</div>
-        ${b.notes ? `<div class="small muted">“${esc(b.notes)}”</div>` : ''}${b.status === 'CANCELLED' && b.cancelReason ? `<div class="small muted">Reason: ${esc(b.cancelReason)}</div>` : ''}</div>
+        ${b.notes ? `<div class="small muted">“${esc(b.notes)}”</div>` : ''}${b.status === 'CANCELLED' && b.cancelReason ? `<div class="small muted">Reason: ${esc(b.cancelReason)}</div>` : ''}${payNote('booking', b.id)}</div>
       <div class="booking-side"><b>${money(b.totalPrice)}</b>${statusTag(b.status)}<div class="booking-btns"><a class="btn btn-ghost btn-sm" href="#/messages/${other.id}" aria-label="Message">💬</a>${btns}</div></div></div>`; };
   return `<h1>Bookings</h1>
     ${u.isFreelancer ? `<div class="card card-pad" style="margin-bottom:20px"><h3>Requests from clients ${received.filter(b => b.status === 'PENDING').length ? `<span class="tag orange">${received.filter(b => b.status === 'PENDING').length} to confirm</span>` : ''}</h3>
@@ -1307,15 +1363,30 @@ function adminVerifications() {
     <p class="muted">Check that each document is genuine, readable and matches the freelancer’s name. Files are deleted from the server as soon as you approve or reject them.</p>
     ${Object.keys(byUser).length ? Object.entries(byUser).map(([uid, list]) => { const x = user(uid), cat = catById(x.category);
       return `<div class="card card-pad" style="margin-bottom:16px"><div style="display:flex;gap:12px;align-items:center;margin-bottom:10px">${avatar(x)}<div><a href="#/user/${x.id}"><b>${esc(x.name)}</b></a> <span class="muted small">${esc(x.email || '')}</span>
-        <div class="small muted">${cat.ico} ${esc(cat.name)}${cat.requiresVerification ? ` · needs ${cat.requiredDocuments.map(t => DOC_INFO[t][0]).join(' + ')}` : ' · optional verification'}</div></div></div>
+        <div class="small muted">${cat.ico} ${esc(catName(cat))}${cat.requiresVerification ? ` · needs ${cat.requiredDocuments.map(t => DOC_INFO[t][0]).join(' + ')}` : ' · optional verification'}</div></div></div>
         ${list.map(d => `<div class="list-item"><div><b>${DOC_INFO[d.type][0]}</b><div class="small muted">${esc(d.fileName || 'file')} · ${esc(d.mime)} · uploaded ${ago(d.uploaded)}</div></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">${d.hasFile ? `<a class="btn btn-ghost btn-sm" href="${apiUrl('admin/verification-file', '&id=' + d.id)}" target="_blank" rel="noopener">View file</a>` : '<span class="small muted">(file missing)</span>'}
             <button class="btn btn-outline btn-sm" data-action="doc-reject" data-id="${d.id}">Reject</button><button class="btn btn-primary btn-sm" data-action="doc-approve" data-id="${d.id}">Approve</button></div></div>`).join('')}</div>`; }).join('')
       : `<div class="card card-pad">${empty('✅', 'No documents waiting for review.')}</div>`}</div>`;
 }
 
+/* ---------- admin: #/admin/categories ---------- */
+function adminCategories() {
+  const count = id => db.users.filter(x => x.isFreelancer && x.category === id).length;
+  const row = c => `<form class="card card-pad cat-row" data-id="${c.id}" style="margin-bottom:12px"><div style="display:flex;gap:12px;align-items:center;margin-bottom:10px"><span class="ico" style="background:${c.color}">${c.ico}</span>
+      <div><b>${esc(c.name)}</b> ${c.status === 'NEW' ? '<span class="tag orange">New</span>' : ''}<div class="small muted">${SERVICE_TYPES[c.serviceType] || ''} · ${count(c.id)} freelancer${count(c.id) === 1 ? '' : 's'}${c.createdBy ? ` · created by <a href="#/user/${c.createdBy}">${esc((user(c.createdBy) || {}).name || 'a freelancer')}</a>` : ''}</div></div></div>
+    <div class="row3"><div class="field"><label>English</label><input name="name" required maxlength="40" value="${esc(c.name)}"></div><div class="field"><label>Estonian</label><input name="nameEt" required maxlength="40" value="${esc(c.nameEt)}"></div><div class="field"><label>Russian</label><input name="nameRu" required maxlength="40" value="${esc(c.nameRu)}"></div></div>
+    <label class="filter-opt"><input type="checkbox" name="requiresVerification" ${c.requiresVerification ? 'checked' : ''}> 🛡️ Freelancers must be ID-checked before they can be booked</label>
+    <div class="cat-actions"><button class="btn btn-primary btn-sm">${c.status === 'NEW' ? 'Approve' : 'Save'}</button>
+      ${c.id.startsWith('own-') ? `<select name="mergeTarget" aria-label="Merge into"><option value="">Merge into…</option>${CATEGORIES.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-sm" data-action="cat-merge" data-id="${c.id}">Merge</button>` : ''}</div></form>`;
+  const fresh = CATEGORIES.filter(c => c.status === 'NEW'), rest = CATEGORIES.filter(c => c.status !== 'NEW');
+  return `<div class="container" style="padding-top:36px"><a href="#/admin">← Admin panel</a><h1>Categories</h1>
+    <p class="muted">New categories from freelancers already work in search. Approve them to show them on the home page and to search engines, or merge them into a similar one.</p>
+    <h2>New (${fresh.length})</h2>${fresh.map(row).join('') || '<p class="muted">Nothing new.</p>'}<h2 style="margin-top:24px">All categories</h2>${rest.map(row).join('')}</div>`;
+}
+
 /* ---------- router ---------- */
-const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, terms: () => termsPage(lang, { fee: PLATFORM_FEE }), privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
 // The page address: a real path (/freelancers?cat=x), or a hash for old links (/#/freelancers).
 const currentPath = () => (location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname + location.search);
 const toPath = h => '/' + String(h).replace(/^#?\/?/, '');
@@ -1329,7 +1400,8 @@ function render() {
   const { name, args, q } = parseHash();
   const view = ROUTES[name] || V.notFound;
   renderHeader();
-  try { $('#app').innerHTML = view(args, q); if ($('#book-card')) loadSlots(); }
+  const u = me(), bar = u && u.termsAccepted === false && name !== 'terms' ? '<div class="container"><div class="notice terms-bar">Our Terms of Service were updated. <button type="button" class="link-btn" data-action="terms-review">Review and accept</button></div></div>' : '';
+  try { $('#app').innerHTML = bar + view(args, q); if ($('#book-card')) loadSlots(); }
   catch (err) {
     console.error(err);
     $('#app').innerHTML = `<div class="container">${empty('⚠️', 'Something went wrong showing this page.', '<a class="btn btn-primary" href="#/">Go to homepage</a>')}</div>`;
@@ -1406,7 +1478,8 @@ const A = {
   signup: el => openAuth('signup', el && el.dataset.intent),
   'toggle-filters': () => { const f = $('.filters'); if (f) { f.classList.toggle('open'); if (f.classList.contains('open')) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
   'clear-filter': el => { const { key, val } = el.dataset, q = parseHash().q;
-    if (key === 'cat') setQuery({ cat: (q.cat || '').split(',').filter(c => c && c !== val).join(',') });
+    if (key === 'sub') setQuery({ sub: (q.sub || '').split(',').filter(c => c && c !== val).join(',') });
+    else if (key === 'cat') { const drop = (catById(val).subcategories || []).map(x => x.id); setQuery({ cat: (q.cat || '').split(',').filter(c => c && c !== val).join(','), sub: (q.sub || '').split(',').filter(x => x && !drop.includes(x)).join(',') }); }
     else if (key === 'city') setQuery({ city: '', area: '' });
     else setQuery({ [key]: '' }); },
   'toggle-pw': el => { const i = el.parentElement.querySelector('input'); const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? t('auth.hide') : t('auth.show'); },
@@ -1452,6 +1525,23 @@ const A = {
   // onboarding
   'ob-next': () => obGo(+1),
   'ob-back': () => obGo(-1),
+  'ob-newcat': () => { obRead(); OB.newCat = !OB.newCat; render(); const i = $('[name="newCatName"]'); i && i.focus(); },
+  'ob-createcat': () => { obRead(); const f = new FormData($('#ob-form'));
+    act('category/create', { name: f.get('newCatName'), serviceType: f.get('newCatType'), icon: f.get('newCatIcon') }, null, { after: r => {
+      OB.newCat = false; if (OB.category !== r.id) OB.subcategories = []; OB.category = r.id;
+      if (r.subcategoryId && !OB.subcategories.includes(r.subcategoryId)) OB.subcategories.push(r.subcategoryId);
+      render(); toast(r.existing ? `That already exists in “${esc(r.name)}”, so we selected it for you.` : 'Category created ✓', 'success'); } }); },
+  'terms-review': () => openTerms(),
+  'terms-accept': () => act('terms/accept', { version: TERMS_VERSION }, null, { after: () => { closeModal(); render(); toast('Thank you. You can continue now.', 'success'); } }),
+  // work done, problems
+  'project-deliver': el => { if (confirm('Is the work finished? The client will be asked to check it and release the payment.')) act('project/deliver', { id: el.dataset.id }, 'Marked as done ✓ The client has been asked to approve.'); },
+  'bk-deliver': el => { if (confirm('Is the work finished? The client will be asked to approve it.')) act('booking/deliver', { id: el.dataset.id }, 'Marked as done ✓ The client has been asked to approve.'); },
+  'pay-problem': el => openProblem(el.dataset.id),
+  'pay-release': el => { const note = prompt('Pay the freelancer? Optional note for both sides:', ''); if (note !== null) act('admin/payment-resolve', { id: el.dataset.id, action: 'release', note }, 'Payment released to the freelancer.'); },
+  'pay-refund': el => { const note = prompt('Refund the client? Optional note for both sides:', ''); if (note !== null) act('admin/payment-resolve', { id: el.dataset.id, action: 'refund', note }, 'Client refunded.'); },
+  // admin categories
+  'cat-merge': el => { const sel = el.closest('.cat-row').querySelector('[name="mergeTarget"]'); if (!sel.value) return toast('Choose a category to merge into.', 'error');
+    if (confirm('Move everyone to the chosen category and remove this one?')) act('admin/category', { id: el.dataset.id, action: 'merge', target: sel.value }, 'Categories merged.'); },
   'ob-step': el => { obRead(); go('#/onboarding?step=' + el.dataset.step); },
   'ob-finish': () => { obRead(); act('onboarding/save', { ...OB, complete: true }, null, { after: () => { const id = me().id; OB = null; go('#/user/' + id); render(); toast('Your service profile is live ✓', 'success'); } }); },
   'ob-preset': el => { obRead(); const P = { weekdays: [['MON', 'TUE', 'WED', 'THU', 'FRI'], '09:00', '17:00'], evenings: [['MON', 'TUE', 'WED', 'THU', 'FRI'], '17:00', '21:00'], weekends: [['SAT', 'SUN'], '10:00', '16:00'] }[el.dataset.preset];
@@ -1587,10 +1677,12 @@ document.addEventListener('submit', e => {
     if (!file || !file.size) return toast('Please choose a file.', 'error');
     if (file.size > 5 * 1024 * 1024) return toast('The file is too large (max 5 MB).', 'error');
     act('verification/document', f, 'Document uploaded ✓ We’ll review it soon.'); return; }
+  if (form.classList.contains('cat-row')) { e.preventDefault(); act('admin/category', { id: form.dataset.id, action: 'save', name: f.get('name'), nameEt: f.get('nameEt'), nameRu: f.get('nameRu'), requiresVerification: !!f.get('requiresVerification') }, 'Category saved ✓'); return; }
   const handlers = {
+    'problem-form': () => act('payment/problem', { id: form.dataset.id, reason: f.get('reason') }, null, { errEl: form.querySelector('.auth-err'), after: () => { closeModal(); render(); toast('Thanks. Worklay will look at it.', 'success'); } }),
     'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
-    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };
+    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), sub: f.getAll('sub').filter(id => f.getAll('cat').some(c => (catById(c).subcategories || []).some(x => x.id === id))).join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };
       Object.keys(q).forEach(k => !q[k] && delete q[k]); const { name } = parseHash(); go(`#/${name}?` + new URLSearchParams(q)); },
     'project-form': () => {
       if (+f.get('max') < +f.get('min')) return toast('Max budget must be greater than min budget.');

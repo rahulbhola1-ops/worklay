@@ -10,7 +10,7 @@
       wl_users.balance and is transferred as soon as their account is ready.
 
    Payment statuses: pending → (processing →) paid → released → transferring → transferred,
-   or pending/processing → cancelled, or paid → refunded.
+   or pending/processing → cancelled, or paid → refunding → refunded.
 
    Kinds: 'order' (service package), 'project' (awarded project) and 'booking' (date/time booking:
    paid when requested, refunded if the freelancer declines or it's cancelled, released when the
@@ -117,20 +117,30 @@ export function createPayments({ db, notify, publicOrigin }) {
     if (p.checkout_session_id && p.status === 'pending') stripe.checkout.sessions.expire(p.checkout_session_id).catch(() => {});
   }
 
+  // Claims the payment first, so a refund and a release can never both happen.
   async function refund(paymentId, reason) {
     const p = await getPayment(paymentId);
-    if (!p || !p.payment_intent_id || p.status !== 'paid') return;
-    await stripe.refunds.create({ payment_intent: p.payment_intent_id, metadata: { payment_id: String(p.id), reason } }, { idempotencyKey: `refund_${p.payment_intent_id}` });
-    await db.updateTable('wl_payments').set({ status: 'refunded' }).where('id', '=', p.id).execute();
-    await notify(p.buyer_id, 'payment', `Your payment of €${p.amount} was refunded: ${reason}.`, '#/dashboard');
+    if (!p || !p.payment_intent_id) return false;
+    const claimed = await db.updateTable('wl_payments').set({ status: 'refunding', processing_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'paid').executeTakeFirst();
+    if (!changed(claimed)) return false;
+    try {
+      await stripe.refunds.create({ payment_intent: p.payment_intent_id, metadata: { payment_id: String(p.id), reason: String(reason).slice(0, 400) } }, { idempotencyKey: `refund_${p.payment_intent_id}` });
+    } catch (e) {
+      await db.updateTable('wl_payments').set({ status: 'paid', processing_at: null }).where('id', '=', p.id).where('status', '=', 'refunding').execute();
+      throw e;
+    }
+    await finishRefund(p, reason);
+    return true;
+  }
+  async function finishRefund(p, reason) {
+    const r = await db.updateTable('wl_payments').set({ status: 'refunded', processing_at: null }).where('id', '=', p.id).where('status', '=', 'refunding').executeTakeFirst();
+    if (changed(r)) await notify(p.buyer_id, 'payment', `Your payment of €${p.amount} was refunded: ${reason}.`, '#/dashboard');
   }
 
   // Give a held booking payment back (declined or cancelled). Returns false if nothing was paid.
   async function refundBooking(bookingId, reason) {
     const p = await paidPaymentFor({ bookingId });
-    if (!p) return false;
-    await refund(p.id, reason);
-    return true;
+    return p ? refund(p.id, reason) : false;
   }
 
   // Abandoned checkouts: free them up so they don't sit in "awaiting payment" forever.
@@ -141,49 +151,94 @@ export function createPayments({ db, notify, publicOrigin }) {
   }
 
   // ---- releasing money to freelancers ----
-  // Called when the customer approves the work. Returns false if there was no paid payment.
   const refColumn = { order: 'order_id', project: 'project_id', booking: 'booking_id' };
-  const paidPaymentFor = ({ orderId = null, projectId = null, bookingId = null }) => {
+  const refOf = ({ orderId = null, projectId = null, bookingId = null }) => {
     const kind = orderId ? 'order' : bookingId ? 'booking' : 'project';
-    return db.selectFrom('wl_payments').selectAll().where('status', '=', 'paid').where('kind', '=', kind)
-      .where(refColumn[kind], '=', orderId ?? bookingId ?? projectId).executeTakeFirst();
+    return [kind, orderId ?? bookingId ?? projectId];
   };
+  const paymentsFor = ref => { const [kind, id] = refOf(ref); return db.selectFrom('wl_payments').selectAll().where('kind', '=', kind).where(refColumn[kind], '=', id); };
+  const paidPaymentFor = ref => paymentsFor(ref).where('status', '=', 'paid').executeTakeFirst();
+  // Was this job paid through Stripe at all (whatever happened to the money since)?
+  const hasPayment = async ref => !!(await paymentsFor(ref).where('status', 'not in', ['pending', 'cancelled']).executeTakeFirst());
+
+  // The customer approved the work (or an admin decided): the freelancer's share is released and
+  // transferred straight away if their payout account is ready. Returns false if nothing was held.
   async function release(ref) {
     const p = await paidPaymentFor(ref);
     if (!p) return false;
-    await db.transaction().execute(async trx => {
+    const released = await db.transaction().execute(async trx => {
       const r = await trx.updateTable('wl_payments').set({ status: 'released', released_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'paid').executeTakeFirst();
-      if (changed(r)) await trx.updateTable('wl_users').set({ balance: sql`balance + ${net(p)}` }).where('id', '=', p.seller_id).execute();
+      if (!changed(r)) return false;
+      await trx.updateTable('wl_users').set({ balance: sql`balance + ${net(p)}` }).where('id', '=', p.seller_id).execute();
+      return true;
     });
-    transferPending(p.seller_id).catch(e => console.error('Transfer failed for user', p.seller_id, e.message));
-    return true;
+    if (released) transferPending(p.seller_id).catch(e => console.error('Transfer failed for user', p.seller_id, e.message));
+    return released;
+  }
+
+  async function markTransferred(p, transferId) {
+    const done = await db.transaction().execute(async trx => {
+      const r = await trx.updateTable('wl_payments').set({ status: 'transferred', transfer_id: transferId, processing_at: null }).where('id', '=', p.id).where('status', '=', 'transferring').executeTakeFirst();
+      if (!changed(r)) return false;
+      await trx.updateTable('wl_users').set({ balance: sql`greatest(0, balance - ${net(p)})` }).where('id', '=', p.seller_id).execute();
+      return true;
+    });
+    if (done) await notify(p.seller_id, 'payment', `€${net(p)} was sent to your Stripe account. Stripe will pay it out to your bank.`, '#/dashboard/earnings');
   }
 
   // Send every released payment to the freelancer's Stripe account, if it can receive money.
+  // One failing payment doesn't hold up the others; retryStuck() tries again later.
   async function transferPending(userId) {
     const u = await db.selectFrom('wl_users').select(['stripe_account_id', 'stripe_payouts_ready']).where('id', '=', userId).executeTakeFirst();
     if (!u || !u.stripe_account_id || !u.stripe_payouts_ready) return;
     const due = await db.selectFrom('wl_payments').selectAll().where('seller_id', '=', userId).where('status', '=', 'released').execute();
     for (const p of due) {
-      const claimed = await db.updateTable('wl_payments').set({ status: 'transferring' }).where('id', '=', p.id).where('status', '=', 'released').executeTakeFirst();
+      const claimed = await db.updateTable('wl_payments').set({ status: 'transferring', processing_at: sql`now()` }).where('id', '=', p.id).where('status', '=', 'released').executeTakeFirst();
       if (!changed(claimed)) continue; // another request is already sending it
       try {
         const pi = await stripe.paymentIntents.retrieve(p.payment_intent_id);
         const transfer = await stripe.transfers.create({
           amount: cents(net(p)), currency: 'eur', destination: u.stripe_account_id,
-          source_transaction: typeof pi.latest_charge === 'string' ? pi.latest_charge : pi.latest_charge?.id, // works before the card funds settle
+          source_transaction: chargeOf(pi), // works before the card funds settle
           transfer_group: `payment_${p.id}`, metadata: { payment_id: String(p.id) },
         }, { idempotencyKey: `transfer_${p.payment_intent_id}` }); // one transfer per customer payment, even on retries
-        await db.transaction().execute(async trx => {
-          await trx.updateTable('wl_payments').set({ status: 'transferred', transfer_id: transfer.id }).where('id', '=', p.id).execute();
-          await trx.updateTable('wl_users').set({ balance: sql`greatest(0, balance - ${net(p)})` }).where('id', '=', userId).execute();
-        });
-        await notify(userId, 'payment', `€${net(p)} was sent to your Stripe account. Stripe will pay it out to your bank.`, '#/dashboard/earnings');
+        await markTransferred(p, transfer.id);
       } catch (e) {
-        await db.updateTable('wl_payments').set({ status: 'released' }).where('id', '=', p.id).execute();
-        throw e;
+        await db.updateTable('wl_payments').set({ status: 'released', processing_at: null }).where('id', '=', p.id).where('status', '=', 'transferring').execute();
+        console.error('Transfer failed for payment', p.id, e.message);
       }
     }
+  }
+  const chargeOf = pi => (typeof pi.latest_charge === 'string' ? pi.latest_charge : pi.latest_charge?.id);
+
+  /* Runs every few minutes: finishes transfers and refunds that a crash interrupted, retries failed
+     transfers, and refunds cancelled jobs whose refund didn't go through. Stripe is asked what
+     really happened before anything is sent again, so money can't go out twice. */
+  async function retryStuck({ staleMinutes = 10 } = {}) {
+    if (!stripe) return;
+    const stale = status => db.selectFrom('wl_payments').selectAll().where('status', '=', status)
+      .where(eb => eb.or([eb('processing_at', 'is', null), eb('processing_at', '<', sql`now() - make_interval(mins => ${staleMinutes})`)])).execute();
+    const attempt = async (p, fn) => { try { await fn(); } catch (e) { console.error('Payment retry failed', p.id, e.message); } };
+
+    for (const p of await stale('transferring')) await attempt(p, async () => {
+      const charge = chargeOf(await stripe.paymentIntents.retrieve(p.payment_intent_id));
+      const sent = (await stripe.transfers.list({ transfer_group: `payment_${p.id}`, limit: 100 })).data.find(t => t.source_transaction === charge);
+      if (sent) await markTransferred(p, sent.id);
+      else await db.updateTable('wl_payments').set({ status: 'released', processing_at: null }).where('id', '=', p.id).where('status', '=', 'transferring').execute();
+    });
+    for (const p of await stale('refunding')) await attempt(p, async () => {
+      const done = (await stripe.refunds.list({ payment_intent: p.payment_intent_id, limit: 10 })).data.some(r => ['succeeded', 'pending', 'requires_action'].includes(r.status));
+      if (done) await finishRefund(p, 'the payment was returned');
+      else await db.updateTable('wl_payments').set({ status: 'paid', processing_at: null }).where('id', '=', p.id).where('status', '=', 'refunding').execute();
+    });
+    const owed = await db.selectFrom('wl_payments as p').selectAll('p').where('p.status', '=', 'paid').where(eb => eb.or([
+      eb('p.booking_id', 'in', eb.selectFrom('wl_bookings').select('id').where('status', '=', 'CANCELLED')),
+      eb('p.order_id', 'in', eb.selectFrom('wl_orders').select('id').where('status', '=', 'cancelled')),
+      eb('p.project_id', 'in', eb.selectFrom('wl_projects').select('id').where('status', '=', 'cancelled')),
+    ])).execute();
+    for (const p of owed) await attempt(p, () => refund(p.id, 'the job was cancelled'));
+    const sellers = await db.selectFrom('wl_payments').select('seller_id').distinct().where('status', '=', 'released').execute();
+    for (const { seller_id } of sellers) await transferPending(seller_id).catch(e => console.error('Transfer retry failed for user', seller_id, e.message));
   }
 
   // ---- freelancer onboarding (Accounts v2, Express dashboard) ----
@@ -317,11 +372,12 @@ export function createPayments({ db, notify, publicOrigin }) {
     return (await q.execute()).map(p => ({
       id: String(p.id), kind: p.kind, orderId: p.order_id ? String(p.order_id) : null, projectId: p.project_id ? String(p.project_id) : null, bookingId: p.booking_id ? String(p.booking_id) : null,
       buyerId: String(p.buyer_id), sellerId: String(p.seller_id), amount: p.amount, fee: p.fee, net: net(p), status: p.status, created: iso(p.created_at),
+      problem: p.problem_at ? { reason: p.problem_reason, by: p.problem_by ? String(p.problem_by) : null, at: iso(p.problem_at) } : null,
     }));
   }
 
   return {
-    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, refundBooking, cleanupAbandoned,
+    enabled: !!stripe, startCheckout, cancelPayment, getPayment, release, refund, refundBooking, hasPayment, paidPaymentFor, retryStuck, transferPending, cleanupAbandoned,
     onboardingLink, refreshAccount, dashboardLink, registerRoutes, summary, listFor,
   };
 }
