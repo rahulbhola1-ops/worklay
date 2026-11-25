@@ -3,6 +3,7 @@
    through the API and then reloads that data. */
 import { privacyPage, cookiesPage } from './legal.js';
 import { termsPage } from './terms-page.js';
+import { blogHtml, localPost } from './blog-text.mjs';
 
 (() => {
 'use strict';
@@ -1155,10 +1156,18 @@ V.contact = () => `<div class="page-head"><div class="container"><h1>Contact us<
     <div class="field"><label>Message</label><textarea name="message" required></textarea></div><p class="small muted">We use your details only to reply to you. See our <a href="#/privacy">Privacy Policy</a>.</p><button class="btn btn-primary">Send message</button></form>
     <aside><div class="card card-pad"><h3>Get in touch</h3><p class="muted">📧 support@worklay.com</p><p class="muted">🕘 Mon–Fri, 9:00–18:00 (EET)</p><p class="muted">We usually reply within one business day.</p></div></aside></div>`;
 
-V.blog = () => `<div class="page-head"><div class="container"><h1>Worklay Blog</h1><p>Tips for buyers and freelancers.</p></div></div>
-  <div class="container" style="padding-top:36px"><div class="grid">${db.posts.map(p => `<a class="card svc-card" href="#/blog/${p.id}"><div class="blog-cover" style="background:${p.color}">${p.emoji}</div><div class="svc-body"><span class="small muted">${monthYear(p.date)}</span><span class="svc-title">${esc(p.title)}</span><p class="muted small" style="margin:0">${esc(p.excerpt)}</p></div></a>`).join('')}</div></div>`;
+const BLOG_UI = {
+  en: { title: 'Worklay Blog', lead: 'News and tips for customers and freelancers.', none: 'No posts yet.', back: 'Blog', find: 'Find a freelancer', work: 'Create your profile' },
+  et: { title: 'Worklay blogi', lead: 'Uudised ja nõuanded klientidele ja vabakutselistele.', none: 'Postitusi veel pole.', back: 'Blogi', find: 'Leia vabakutseline', work: 'Loo oma profiil' },
+  ru: { title: 'Блог Worklay', lead: 'Новости и советы для клиентов и фрилансеров.', none: 'Записей пока нет.', back: 'Блог', find: 'Найти фрилансера', work: 'Создать профиль' },
+};
+V.blog = () => { const b = BLOG_UI[lang] || BLOG_UI.en;
+  return `<div class="page-head"><div class="container"><h1>${b.title}</h1><p>${b.lead}</p></div></div>
+  <div class="container" style="padding-top:36px">${db.posts.length ? `<div class="grid">${db.posts.map(p => { const x = localPost(p, lang); return `<a class="card svc-card" href="#/blog/${p.id}"><div class="blog-cover" style="background:${esc(p.color)}">${esc(p.emoji)}</div><div class="svc-body"><span class="small muted">${monthYear(p.created)}</span><span class="svc-title">${esc(x.title)}</span><p class="muted small" style="margin:0">${esc(x.excerpt)}</p></div></a>`; }).join('')}</div>` : empty('📝', b.none)}</div>`; };
 V.blogPost = ([id]) => { const p = db.posts.find(x => x.id === id); if (!p) return V.notFound();
-  return `<article class="prose"><a href="#/blog">← Blog</a><div class="blog-cover" style="background:${p.color};border-radius:16px;margin:16px 0">${p.emoji}</div><span class="muted small">${monthYear(p.date)}</span><h1>${esc(p.title)}</h1>${p.body.map(x => `<p>${esc(x)}</p>`).join('')}</article>`; };
+  const x = localPost(p, lang), b = BLOG_UI[lang] || BLOG_UI.en;
+  return `<article class="prose blog-post"><a href="#/blog">← ${b.back}</a><div class="blog-cover" style="background:${esc(p.color)};border-radius:16px;margin:16px 0">${esc(p.emoji)}</div><span class="muted small">${monthYear(p.created)}</span><h1>${esc(x.title)}</h1>${blogHtml(x.body, esc)}
+    <p class="blog-cta"><a class="btn btn-primary" href="#/freelancers">${b.find}</a>${me() ? '' : `<button class="btn btn-outline" data-action="signup">${b.work}</button>`}</p></article>`; };
 
 V.notFound = () => `<div class="container">${empty('🧭', 'Page not found.', '<a class="btn btn-primary" href="#/">Go home</a>')}</div>`;
 
