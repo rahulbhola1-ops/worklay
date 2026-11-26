@@ -608,3 +608,49 @@ main:focus{outline:none} /* focused programmatically after navigation; not a con
   .topbar-inner{padding:0 12px}
   .topbar-actions .language-chevron{display:none}
 }
+
+/* India: states, cities and areas */
+.india-hero .hero-inner{grid-template-columns:1fr;padding-top:64px;padding-bottom:64px}
+.state-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}
+.state-card{display:flex;flex-direction:column;gap:2px;padding:14px 16px;background:#fff;border:1px solid var(--line);border-radius:14px;color:var(--ink);transition:.15s var(--ease)}
+.state-card:hover{border-color:var(--brand);transform:translateY(-2px);box-shadow:var(--shadow)}
+.state-card span{color:var(--muted);font-size:.9rem}
+.place-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;align-items:start}
+.place .city-chips{margin-top:10px}
+button.city-chip{font:inherit;cursor:pointer}
+.city-chip.on{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.lang-native{font-weight:600;font-size:.85rem;white-space:nowrap}
+.language-menu{max-height:min(70vh,520px);overflow-y:auto}
+.menu-line{width:100%;border:0;border-top:1px solid var(--line);margin:4px 0}
+[dir=rtl] .language-menu,[dir=rtl] .dropdown-menu{right:auto;left:0}
+[dir=rtl] .btn-arrow{transform:scaleX(-1)}
+[dir=rtl] .language-option{text-align:right}
+[dir=rtl] .topbar-actions{margin-left:0;margin-right:auto}
+html.long-nav .burger{display:grid;place-items:center}
+html.long-nav .topbar-inner{justify-content:space-between;gap:10px}
+html.long-nav .mainnav{display:none;position:absolute;top:70px;left:0;right:0;background:#fff;flex-direction:column;padding:12px 16px 18px;border-bottom:1px solid var(--line);gap:2px;box-shadow:var(--shadow)}
+html.long-nav .mainnav.open{display:flex}
+html.long-nav .mainnav a{padding:12px}
+html.long-nav .topbar-actions{margin-left:auto}
+a.pill-badge{color:#fff}
+a.pill-badge:hover{background:rgba(255,255,255,.25)}
+.india-hero+.container .notice{margin:0 0 28px}
+@media (max-width:560px){
+  .lang-native{max-width:46px;overflow:hidden;text-overflow:ellipsis}
+  .topbar-actions .btn-join{display:block;max-width:118px;overflow:hidden;text-overflow:ellipsis;line-height:40px;padding:0 12px}
+}
+@media (max-width:360px){
+.lang-native{max-width:34px}
+.topbar-actions .btn-join{max-width:92px}
+}
+.india-hero h1{overflow-wrap:anywhere}
+@media (max-width:560px){.india-hero h1{font-size:1.75rem;line-height:1.3}.india-hero .btn{white-space:normal}}
+.country-bar{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 20px}
+.country-bar label{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:14px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);color:#fff;font-weight:500;font-size:.9rem;max-width:100%}
+.country-bar select{width:auto;max-width:230px;min-width:0;padding:8px 10px;border:0;border-radius:10px;background:#fff;color:var(--ink);font-weight:600}
+[dir=rtl] .country-bar label{padding:6px 14px 6px 6px}
+@media (max-width:560px){.country-bar label{width:100%}.country-bar label span{display:none}.country-bar select{flex:1;max-width:none}}
+.place-search{max-width:420px;margin:0 0 14px}
+.city-chip.more{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.all-cities{columns:4 170px;margin-top:18px}
+.all-cities a{display:block;padding:3px 0;font-size:.93rem;break-inside:avoid}

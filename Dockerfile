@@ -26,6 +26,8 @@ COPY --from=build /app/dist ./dist
 # All server-side modules (server, payments, mail, storage, scheduling, ...)
 COPY --from=build /app/*.mjs ./
 COPY --from=build /app/db ./db
+# Regions, cities and areas of other countries
+COPY --from=build /app/geo ./geo
 
 RUN chown -R node:node /app
 USER node

@@ -20,6 +20,8 @@ export const COOKIES = [
     purpose: { en: 'Only set when you sign in with Google. Protects the sign-in against forgery and is deleted when you return.', et: 'Seatakse ainult Google’iga sisselogimisel. Kaitseb sisselogimist võltsimise eest ja kustutatakse, kui naased.', ru: 'Устанавливается только при входе через Google. Защищает вход от подделки и удаляется после возврата на сайт.' } },
   { name: 'worklay-lang', type: 'localStorage', category: 'necessary', duration: { en: 'Until you clear it', et: 'Kuni kustutad', ru: 'Пока вы его не удалите' },
     purpose: { en: 'Remembers the language you chose.', et: 'Jätab meelde sinu valitud keele.', ru: 'Запоминает выбранный вами язык.' } },
+  { name: 'worklay-country', type: 'localStorage', category: 'necessary', duration: { en: 'Until you clear it', et: 'Kuni kustutad', ru: 'Пока вы его не удалите' },
+    purpose: { en: 'Remembers the country you chose.', et: 'Jätab meelde sinu valitud riigi.', ru: 'Запоминает выбранную вами страну.' } },
   { name: 'worklay-consent', type: 'localStorage', category: 'necessary', duration: { en: '6 months', et: '6 kuud', ru: '6 месяцев' },
     purpose: { en: 'Remembers your cookie choices so we don’t ask again on every visit.', et: 'Jätab meelde sinu küpsiste valikud, et me ei küsiks igal külastusel uuesti.', ru: 'Запоминает ваши настройки cookie, чтобы не спрашивать при каждом посещении.' } },
 ];

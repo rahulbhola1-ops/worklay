@@ -34,6 +34,8 @@ services:
       # Card payments through Stripe Connect (optional)
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # Other countries, e.g. IN,DE or all (see README)
+      COUNTRIES_ENABLED: ${COUNTRIES_ENABLED:-}
       # Profile photos in Cloudflare R2 (optional)
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}

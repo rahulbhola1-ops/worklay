@@ -11,7 +11,9 @@ import { createStorage, detectImage } from './storage.mjs';
 import { createMailer } from './mail.mjs';
 import { createNotifications } from './notifications.mjs';
 import { createSeo } from './seo.mjs';
-import { TERMS_VERSION, APPROVAL_DAYS } from './terms.mjs';
+import { termsVersionFor, APPROVAL_DAYS } from './terms.mjs';
+import fs from 'node:fs';
+import { COUNTRIES, enabledCountries, langsFor, cleanPlace, formatMoney } from './countries.mjs';
 import { Readable } from 'node:stream';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,14 +88,41 @@ payments.registerRoutes(app, { me }); // before express.json: the Stripe webhook
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 app.use(express.json({ limit: '5mb' }));
 
-const CITIES = {
-  Tallinn: ['Haabersti','Kesklinn','Kristiine','Lasnamäe','Mustamäe','Nõmme','Pirita','Põhja-Tallinn'],
-  Tartu: ['Annelinn','Karlova','Kesklinn','Maarjamõisa','Ropka','Supilinn','Tammelinn','Ülejõe'],
-  Pärnu: ['Kesklinn','Raeküla','Rannarajoon','Vana-Pärnu','Ülejõe'],
-  Narva: ['Kalevi','Kesklinn','Kreenholm','Pähklimäe','Soldino'],
-  'Kohtla-Järve': ['Ahtme','Järve','Sompa'],
-  Viljandi: ['Kesklinn','Paalalinn','Peetrimõisa']
-};
+/* ---------- Countries ----------
+   Estonia is always on; others are switched on with COUNTRIES_ENABLED ("IN,DE" or "all"). Online booking,
+   ordering and payment only work in Estonia: payments are in euros and Stripe payouts are set up for Estonia. */
+const ENABLED = enabledCountries(process.env.COUNTRIES_ENABLED);
+const countryFrom = v => (ENABLED.includes(v) ? v : 'EE');
+const geoCache = {}, placeCache = new Map(), MAX_PLACE_FILES = 200;
+const readGeo = (...p) => JSON.parse(fs.readFileSync(path.join(__dirname, 'geo', ...p), 'utf8'));
+// Regions of a country; `code` is always one of COUNTRIES.
+function geoOf(code) {
+  if (!Object.hasOwn(COUNTRIES, code) || code === 'EE') return { regions: [] };
+  return geoCache[code] ||= readGeo(`${code}.json`);
+}
+const regionOf = (code, slug) => geoOf(code).regions.find(r => r.slug === slug) || null;
+// { city: [areas] } of a region, biggest cities first; null if there is no such region. The most recently
+// used files stay in memory.
+function placesOf(code, slug) {
+  if (!regionOf(code, slug)) return null;
+  const key = `${code}/${slug}`, hit = placeCache.get(key) || readGeo(code, `${slug}.json`);
+  placeCache.delete(key); placeCache.set(key, hit);
+  if (placeCache.size > MAX_PLACE_FILES) placeCache.delete(placeCache.keys().next().value);
+  return hit;
+}
+// Estonia has no regions here: { city: [areas] }. Small towns have one area, the whole town.
+const CITIES = Object.fromEntries(Object.entries(readGeo('EE', 'estonia.json')).map(([c, a]) => [c, a.length ? a : ['Kogu linn']]));
+// Any language offered somewhere in the country.
+const cleanLang = (v, country) => ([...COUNTRIES[country].langs, ...geoOf(country).regions.flatMap(r => r.langs || [])].includes(v) ? v : '');
+// Location as it may be saved for someone in that country. Estonia keeps its existing rules.
+function cleanLocation(data, country) {
+  if (country !== 'EE') return cleanPlace(placesOf(country, String(data.state ?? '')), data);
+  return { state: '', city: String(data.city || ''), area: String(data.area || '') };
+}
+const areasIn = (country, state, city) => (country === 'EE' ? CITIES[city] || [] : placesOf(country, state)?.[city] || []);
+const PLACE_MISSING = 'Please choose your region, city and area.';
+const NO_PAYMENTS = 'Online booking and payment are not available in this country yet. Please send a message instead.';
+const payable = (...countries) => countries.every(c => c === 'EE');
 
 function sid(v) { return v === null || v === undefined ? null : String(v); }
 function iso(v) { return v ? new Date(v).toISOString().replace('.000Z', 'Z') : new Date().toISOString(); }
@@ -125,6 +154,7 @@ const cleanName = v => String(v ?? '').replace(/\s+/g, ' ').trim();
 // Letters, digits and simple punctuation only: category names are shown all over the site.
 const validCategoryName = n => n.length >= 3 && n.length <= 40 && /^[\p{L}\p{N}][\p{L}\p{N} &,'’().+/-]*$/u.test(n) && /\p{L}{2}/u.test(n);
 const nameKey = n => cleanName(n).toLowerCase();
+const validSubcategory = n => n.length >= 2 && n.length <= 40 && /^[\p{L}\p{N}][\p{L}\p{M}\p{N} &'’().+/-]*$/u.test(n) && /\p{L}/u.test(n);
 // A category or one of its subcategories with this name, in any language.
 async function findCategoryByName(name) {
   const key = nameKey(name), cats = await categories(), names = x => [x.name, x.nameEt, x.nameRu].filter(Boolean).map(nameKey);
@@ -149,23 +179,31 @@ const clampInt = (v, lo, hi, dflt) => { const n = Math.round(Number(v)); return 
 // Columns to save from the onboarding form; `cur` is the user's current row.
 async function cleanProfile(data, cur) {
   const cat = await categoryById(String(data.category ?? cur.category ?? ''));
-  const city = CITIES[data.city] ? String(data.city) : '', area = (CITIES[city] || []).includes(data.area) ? String(data.area) : '';
+  const country = cur.country_code;
+  const { state, city, area } = country !== 'EE' ? cleanLocation(data, country)
+    : { state: '', city: CITIES[data.city] ? String(data.city) : '', area: (CITIES[data.city] || []).includes(data.area) ? String(data.area) : '' };
   const subIds = new Set((cat?.subcategories || []).map(x => x.id));
   const tutoring = cat?.id === 'tutoring';
+  // Freelancers' own subcategories. One that already exists in this category, in any language, becomes that one.
+  const own = [], known = [];
+  for (const name of cleanList(data.customSubcategories, 8).map(cleanName)) {
+    const hit = (cat?.subcategories || []).find(x => [x.name, x.nameEt, x.nameRu].filter(Boolean).some(n => nameKey(n) === nameKey(name)));
+    if (hit) known.push(hit.id); else if (!own.some(x => nameKey(x) === nameKey(name))) own.push(name);
+  }
   return {
     category: cat ? cat.id : '',
-    subcategories: json(cleanList(data.subcategories, 10).filter(x => subIds.has(x))),
-    custom_subcategories: json(cleanList(data.customSubcategories, 8)),
+    subcategories: json([...new Set([...cleanList(data.subcategories, 10).filter(x => subIds.has(x)), ...known])]),
+    custom_subcategories: json(own),
     ...(data.skills === undefined ? {} : { skills: json(cleanList(data.skills, 20)) }),
     title: String(data.title ?? '').trim().slice(0, 60),
     specialty: String(data.specialty ?? '').trim().slice(0, 80),
-    city, area,
-    service_areas: json(cleanList(data.serviceAreas, 40).filter(a => (CITIES[city] || []).includes(a))),
+    state, city, area,
+    service_areas: json(cleanList(data.serviceAreas, 40, 60).filter(a => a === area || areasIn(country, state, city).includes(a))),
     travel_radius_km: clampInt(data.travelRadiusKm, 0, 300, 15),
     tutor_subjects: json(tutoring ? cleanList(data.tutorSubjects, 30) : []),
     tutor_levels: json(tutoring ? cleanList(data.tutorLevels, 12) : []),
     pricing_type: PRICING_TYPES.includes(data.pricingType) ? data.pricingType : 'HOURLY',
-    price_amount: Math.min(100000, Math.max(0, Math.round((Number(data.priceAmount) || 0) * 100) / 100)),
+    price_amount: Math.min(country === 'EE' ? 100000 : 1e9, Math.max(0, Math.round((Number(data.priceAmount) || 0) * 100) / 100)),
     price_unit_label: String(data.priceUnitLabel ?? '').trim().slice(0, 40) || null,
     service_perks: json(cleanList(data.servicePerks, 12, 60)),
     weekly_availability: json(cleanWeekly(data.weeklyAvailability)),
@@ -184,11 +222,12 @@ async function latestDocuments(userId, ex = db) {
 }
 
 // What still stops a freelancer from finishing onboarding.
-async function onboardingProblem(p, userId) {
+async function onboardingProblem(p, userId, country) {
   const cat = await categoryById(p.category);
   if (!cat) return 'Please choose a category.';
   if (!p.specialty) return 'Please tell customers your speciality.';
   if (cat.serviceType !== 'REMOTE' && (!p.city || !p.area)) return 'Please choose your city and area.';
+  if (country !== 'EE' && !p.state) return 'Please choose your region.';
   if (cat.id === 'tutoring' && !JSON.parse(p.tutor_subjects).length) return 'Please choose at least one subject you teach.';
   if (cat.id === 'tutoring' && !JSON.parse(p.tutor_levels).length) return 'Please choose at least one class or level you teach.';
   if (!(p.price_amount > 0)) return 'Please set your price.';
@@ -294,7 +333,8 @@ app.get('/api/auth/google', (req, res) => {
   const state = crypto.randomBytes(24).toString('hex');
   const verifier = crypto.randomBytes(32).toString('base64url');
   const intent = req.query.intent === 'work' ? 'work' : 'hire';
-  const value = encodeURIComponent(JSON.stringify({ state, verifier, intent }));
+  const country = countryFrom(req.query.country), lang = cleanLang(String(req.query.lang || ''), country);
+  const value = encodeURIComponent(JSON.stringify({ state, verifier, intent, country, lang }));
   res.append('Set-Cookie', `${OAUTH_COOKIE}=${value}; Path=/api/auth/google; HttpOnly; SameSite=Lax; Max-Age=600${isHttps(req) ? '; Secure' : ''}`);
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID, redirect_uri: googleRedirectUri(req), response_type: 'code',
@@ -333,7 +373,7 @@ app.get('/api/auth/google/callback', async (req, res) => {
       if (u) await db.updateTable('wl_users').set({ google_id: googleId }).where('id', '=', u.id).execute(); // link existing account (Google verified the email)
       else {
         u = await db.insertInto('wl_users')
-          .values({ name: String(claims.name || email.split('@')[0]).slice(0, 60), email, pw_hash: '', google_id: googleId, is_freelancer: saved.intent === 'work', terms_version: TERMS_VERSION, terms_accepted_at: sql`now()` })
+          .values({ name: String(claims.name || email.split('@')[0]).slice(0, 60), email, pw_hash: '', google_id: googleId, is_freelancer: saved.intent === 'work', country_code: countryFrom(saved.country), lang: cleanLang(saved.lang, countryFrom(saved.country)), terms_version: termsVersionFor(countryFrom(saved.country)), terms_accepted_at: sql`now()` })
           .returning('id').executeTakeFirstOrThrow();
         created = true;
         mailer.sendWelcome({ email, name: String(claims.name || ''), isFreelancer: saved.intent === 'work' }, publicOrigin(req));
@@ -418,12 +458,12 @@ app.all('/api', upload.single('doc'), async (req, res) => {
     // Logged in and has accepted the current Terms of Service.
     const requireTerms = () => {
       const u = requireLogin(); if (!u) return null;
-      if (u.terms_version !== TERMS_VERSION) { res.status(403).json({ error: 'Please accept the updated Terms of Service first.', code: 'TERMS' }); return null; }
+      if (u.terms_version !== termsVersionFor(u.country_code)) { res.status(403).json({ error: 'Please accept the updated Terms of Service first.', code: 'TERMS' }); return null; }
       return u;
     };
     const requireAdmin = () => { if (!user || user.role !== 'admin') { bad(res, 'Admins only.', 403); return null; } return user; };
 
-    if (req.method === 'GET' && route === 'bootstrap') return res.json(await bootstrap(user));
+    if (req.method === 'GET' && route === 'bootstrap') return res.json(await bootstrap(user, countryFrom(String(req.headers['cf-ipcountry'] || 'EE')))); // Cloudflare's country, only used to suggest one; not stored
     if (req.method === 'GET' && route === 'admin/verification-file') {
       if (!requireAdmin()) return;
       const doc = await db.selectFrom('wl_verification_documents').select(['mime', 'data', 'file_name']).where('id', '=', Number(req.query.id) || 0).executeTakeFirst();
@@ -466,12 +506,14 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (String(data.password).length < 8) return bad(res, 'Password must be at least 8 characters.');
         if (data.terms !== true) return bad(res, 'Please accept the Terms of Service.');
         // Freelancers fill in their service profile on the onboarding page right after signing up.
+        const country = countryFrom(data.country), place = cleanLocation(data, country);
+        if (country !== 'EE' && (!place.state || !place.city || !place.area)) return bad(res, PLACE_MISSING);
         const work = data.intent === 'work', category = (await categoryById(String(data.category || ''))) ? String(data.category) : '';
         try {
           const u = await db.insertInto('wl_users').values({
             name: String(data.name || ''), email: String(data.email).toLowerCase(), pw_hash: passwordHash(String(data.password)),
-            title: String(data.title || ''), city: String(data.city || ''), area: String(data.area || ''),
-            is_freelancer: work, category: work ? category : '', terms_version: TERMS_VERSION, terms_accepted_at: sql`now()`,
+            title: String(data.title || ''), country_code: country, ...place, lang: cleanLang(data.lang, country),
+            is_freelancer: work, category: work ? category : '', terms_version: termsVersionFor(country), terms_accepted_at: sql`now()`,
           }).returning('id').executeTakeFirstOrThrow();
           await login(res, u.id);
           mailer.sendWelcome({ email: String(data.email).toLowerCase(), name: String(data.name || ''), isFreelancer: work }, publicOrigin(req));
@@ -496,16 +538,24 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'profile/update': {
         const u = requireLogin(); if (!u) return;
         try {
-          const city = String(data.city || '');
+          const { state, city, area } = cleanLocation(data, u.country_code);
+          if (u.country_code !== 'EE' && (!state || !city || !area)) return bad(res, PLACE_MISSING);
           await db.updateTable('wl_users').set({
             name: String(data.name || u.name), email: String(data.email || u.email).toLowerCase(), title: String(data.title || ''),
-            city, area: String(data.area || ''), is_freelancer: !!data.isFreelancer, bio: String(data.bio || ''), skills: json(skillList(data.skills)),
-            service_areas: json(list(u.service_areas).filter(a => (CITIES[city] || []).includes(a))), // areas only make sense within the city
+            state, city, area, is_freelancer: !!data.isFreelancer, bio: String(data.bio || ''), skills: json(skillList(data.skills)),
+            service_areas: json(list(u.service_areas).filter(a => a === area && u.country_code !== 'EE' || areasIn(u.country_code, state, city).includes(a))), // areas only make sense within the city
           }).where('id', '=', u.id).execute();
         } catch (e) {
           if (isUniqueViolation(e)) return bad(res, 'Another account already uses that email.');
           throw e;
         }
+        return res.json({ ok: true });
+      }
+      case 'profile/language': {
+        const u = requireLogin(); if (!u) return;
+        const lang = cleanLang(String(data.lang || ''), u.country_code);
+        if (!lang) return bad(res, 'Unknown language.');
+        await db.updateTable('wl_users').set({ lang }).where('id', '=', u.id).execute();
         return res.json({ ok: true });
       }
       case 'profile/photo-remove': {
@@ -518,10 +568,12 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       }
       case 'project/create': {
         const u = requireTerms(); if (!u) return;
+        const place = cleanLocation(data, u.country_code);
+        if (u.country_code !== 'EE' && (!place.state || !place.city)) return bad(res, 'Please choose the region and city.');
         const p = await db.insertInto('wl_projects').values({
           owner_id: u.id, title: String(data.title || ''), category: String(data.category || ''), description: String(data.description || ''),
           budget_min: Number(data.min || 0), budget_max: Number(data.max || 0), deadline: String(data.deadline || ''), skills: json(skillList(data.skills)),
-          city: String(data.city || ''), area: String(data.area || ''), remote: !!data.remote,
+          country_code: u.country_code, ...place, remote: !!data.remote,
         }).returning('id').executeTakeFirstOrThrow();
         return res.json({ ok: true, id: sid(p.id) });
       }
@@ -535,6 +587,8 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       }
       case 'proposal/create': {
         const u = requireTerms(); if (!u) return;
+        const target = await db.selectFrom('wl_projects').select(['country_code']).where('id', '=', Number(data.projectId) || 0).executeTakeFirst();
+        if (target && target.country_code !== u.country_code) return bad(res, 'You can only send proposals in your own country.');
         try {
           const p = await db.insertInto('wl_proposals').values({
             project_id: Number(data.projectId) || 0, seller_id: u.id, amount: Number(data.amount || 0), days: Number(data.days || 1), cover: String(data.cover || ''),
@@ -624,6 +678,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'payments/connect': {
         const u = requireLogin(); if (!u) return;
         if (!payments.enabled) return bad(res, 'Card payments are not set up.');
+        if (!payable(u.country_code)) return bad(res, NO_PAYMENTS);
         return res.json({ ok: true, url: await payments.onboardingLink(req, u) });
       }
       case 'payments/status': {
@@ -641,8 +696,9 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         return res.json({ ok: true });
       case 'terms/accept': {
         const u = requireLogin(); if (!u) return;
-        if (data.version !== TERMS_VERSION) return bad(res, 'The terms have changed. Please reload the page.');
-        await db.updateTable('wl_users').set({ terms_version: TERMS_VERSION, terms_accepted_at: sql`now()` }).where('id', '=', u.id).execute();
+        const version = termsVersionFor(u.country_code);
+        if (data.version !== version) return bad(res, 'The terms have changed. Please reload the page.');
+        await db.updateTable('wl_users').set({ terms_version: version, terms_accepted_at: sql`now()` }).where('id', '=', u.id).execute();
         return res.json({ ok: true });
       }
       // A freelancer adds a category that doesn't exist yet. If one with that name does, it's used instead.
@@ -716,6 +772,30 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         if (needsId !== cat.requiresVerification) for (const { id } of await db.selectFrom('wl_users').select('id').where('category', '=', cat.id).execute()) await recomputeVerification(id);
         if (cat.status === 'NEW' && cat.createdBy) await notify(Number(cat.createdBy), 'system', `Your category “${names.name}” was approved.`, '#/onboarding');
         return res.json({ ok: true });
+      }
+      // Make a freelancer's own subcategory an official one, and move everyone who uses it over.
+      case 'admin/subcategory': {
+        if (!requireAdmin()) return;
+        const cat = await categoryById(String(data.category || '')), key = nameKey(data.own);
+        if (!cat || !key) return bad(res, 'Category not found.', 404);
+        const names = { name: cleanName(data.name), name_et: cleanName(data.nameEt), name_ru: cleanName(data.nameRu) };
+        if (!Object.values(names).every(validSubcategory)) return bad(res, 'Names must be 2 to 40 letters or numbers.');
+        if (cat.subcategories.some(x => nameKey(x.name) === nameKey(names.name))) return bad(res, 'This subcategory already exists.');
+        const moved = await db.transaction().execute(async trx => {
+          const id = `own-${crypto.randomBytes(6).toString('hex')}`;
+          await trx.insertInto('wl_subcategories').values({ id, category_id: cat.id, ...names, sort_order: 500 + cat.subcategories.length }).execute();
+          let n = 0;
+          for (const u of await trx.selectFrom('wl_users').select(['id', 'subcategories', 'custom_subcategories']).where('category', '=', cat.id).forUpdate().execute()) {
+            const rest = list(u.custom_subcategories).filter(x => nameKey(x) !== key);
+            if (rest.length === list(u.custom_subcategories).length) continue;
+            await trx.updateTable('wl_users').set({ custom_subcategories: json(rest), subcategories: json([...new Set([...list(u.subcategories), id])]) }).where('id', '=', u.id).execute();
+            await notify(u.id, 'system', `Your subcategory “${names.name}” was approved.`, '#/onboarding', trx);
+            n++;
+          }
+          return n;
+        });
+        forgetCategories();
+        return res.json({ ok: true, moved });
       }
       // The freelancer says the work is done; the client is asked to approve it, which pays them.
       case 'project/deliver': {
@@ -798,8 +878,10 @@ app.all('/api', upload.single('doc'), async (req, res) => {
       case 'onboarding/save': {
         const u = requireLogin(); if (!u) return;
         if (data.complete && !requireTerms()) return;
+        const wrong = cleanList(data.customSubcategories, 8).map(cleanName).find(n => !validSubcategory(n));
+        if (wrong) return bad(res, `“${wrong}” can’t be a subcategory. Use 2 to 40 letters or numbers.`);
         const p = await cleanProfile(data, u);
-        if (data.complete) { const problem = await onboardingProblem(p, u.id); if (problem) return bad(res, problem); }
+        if (data.complete) { const problem = await onboardingProblem(p, u.id, u.country_code); if (problem) return bad(res, problem); }
         await db.updateTable('wl_users').set({ ...p, ...(data.complete ? { is_freelancer: true, onboarding_completed_at: sql`coalesce(onboarding_completed_at, now())` } : {}) })
           .where('id', '=', u.id).execute();
         if (p.category !== u.category) await recomputeVerification(u.id); // the documents needed depend on the category
@@ -837,6 +919,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
         const f = await db.selectFrom('wl_users').selectAll().where('id', '=', Number(data.freelancerId) || 0).executeTakeFirst();
         if (!bookable(f)) return bad(res, 'This freelancer is not taking bookings.');
         if (f.id === u.id) return bad(res, 'You can’t book yourself.');
+        if (!payable(u.country_code, f.country_code)) return bad(res, NO_PAYMENTS);
         const cat = await categoryById(f.category);
         if (cat?.requiresVerification && f.ver_status !== 'verified') return bad(res, 'This freelancer can take bookings once Worklay has verified their documents.');
         const duration = Number(data.duration), date = String(data.date || ''), start = String(data.start || '');
@@ -931,7 +1014,7 @@ app.all('/api', upload.single('doc'), async (req, res) => {
 });
 
 /* Everything the front end needs, filtered to what the current visitor may see. */
-async function bootstrap(user) {
+async function bootstrap(user, visitorCountry = 'EE') {
   const mid = user ? user.id : 0;
   const admin = !!user && user.role === 'admin';
   if (payments.enabled) await payments.cleanupAbandoned();
@@ -980,7 +1063,7 @@ async function bootstrap(user) {
     users: users.map(u => {
       const self = u.id === mid;
       const out = {
-        id: sid(u.id), name: u.name, title: u.title, country: u.country, city: u.city, area: u.area,
+        id: sid(u.id), name: u.name, title: u.title, country: u.country, countryCode: u.country_code, state: u.state, city: u.city, area: u.area,
         bio: u.bio || '', skills: list(u.skills), isFreelancer: u.is_freelancer,
         category: u.category, role: u.role, color: u.color, joined: iso(u.created_at), avatarUrl: storage.urlFor(u.avatar_key),
         specialty: u.specialty, subcategories: list(u.subcategories), customSubcategories: list(u.custom_subcategories), serviceAreas: list(u.service_areas), travelRadiusKm: u.travel_radius_km,
@@ -993,9 +1076,10 @@ async function bootstrap(user) {
         balance: self ? u.balance : 0,
       };
       if (self && payoutSummary) out.payouts = payoutSummary;
+      if (self) out.lang = u.lang;
       if (self || admin) {
         out.email = u.email;
-        out.termsAccepted = u.terms_version === TERMS_VERSION;
+        out.termsAccepted = u.terms_version === termsVersionFor(u.country_code);
         out.verification = { status: u.ver_status, reason: u.ver_reason };
       }
       return out;
@@ -1004,7 +1088,7 @@ async function bootstrap(user) {
     projects: projects.map(p => ({
       id: sid(p.id), ownerId: sid(p.owner_id), title: p.title, category: p.category, description: p.description,
       budgetMin: p.budget_min, budgetMax: p.budget_max, deadline: p.deadline, skills: list(p.skills),
-      city: p.city, area: p.area, remote: p.remote, status: p.status, awardedTo: sid(p.awarded_to),
+      countryCode: p.country_code, state: p.state, city: p.city, area: p.area, remote: p.remote, status: p.status, awardedTo: sid(p.awarded_to),
       awardedAmount: p.awarded_amount, deliveredAt: p.delivered_at && (p.owner_id === mid || p.awarded_to === mid) ? iso(p.delivered_at) : null, proposalCount: p.proposal_count, created: iso(p.created_at),
     })),
     proposals: proposals.map(p => ({ id: sid(p.id), projectId: sid(p.project_id), sellerId: sid(p.seller_id), amount: p.amount, days: p.days, cover: p.cover, status: p.status, created: iso(p.created_at) })),
@@ -1026,7 +1110,7 @@ async function bootstrap(user) {
     contacts: contacts.map(c => ({ id: sid(c.id), name: c.name, email: c.email, message: c.message, date: iso(c.created_at) })),
     myDocuments: myDocuments.map(d => ({ id: sid(d.id), type: d.document_type, status: d.status, reason: d.reason, uploaded: iso(d.uploaded_at) })),
     pendingDocuments: pendingDocuments.map(d => ({ id: sid(d.id), userId: sid(d.user_id), type: d.document_type, fileName: d.file_name, mime: d.mime, uploaded: iso(d.uploaded_at), hasFile: d.has_file })),
-    config: { categories: categoryList, categoryIcons: CATEGORY_ICONS, termsVersion: TERMS_VERSION, approvalDays: APPROVAL_DAYS, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
+    config: { countries: ENABLED, visitorCountry, categories: categoryList, categoryIcons: CATEGORY_ICONS, termsVersion: termsVersionFor(user ? user.country_code : 'EE'), approvalDays: APPROVAL_DAYS, slotMinutes: SLOT_MINUTES, cities: CITIES, fee: PLATFORM_FEE, minPayout: MIN_PAYOUT, payoutMethods: ['PayPal', 'Payoneer', 'Bank transfer'], googleAuth: googleEnabled(), cardPayments: payments.enabled, photoUploads: storage.enabled, maxPhotoMb: MAX_PHOTO_BYTES / 1024 / 1024 },
   };
 }
 
@@ -1037,6 +1121,8 @@ async function mutateProjectAward(req, res, u, data) {
   const project = await db.selectFrom('wl_projects').selectAll().where('id', '=', pr.project_id).executeTakeFirst();
   if (!project || project.owner_id !== u.id) return bad(res, 'Project owner only.', 403);
   if (project.status !== 'open') return bad(res, 'This project has already been awarded.');
+  const winner = await db.selectFrom('wl_users').select('country_code').where('id', '=', pr.seller_id).executeTakeFirst();
+  if (!payable(u.country_code, project.country_code, winner?.country_code)) return bad(res, NO_PAYMENTS);
   if (payments.enabled) {
     // The project is awarded once the payment succeeds. Drop any earlier unfinished checkout for it.
     const pending = await db.selectFrom('wl_payments').selectAll().where('kind', '=', 'project').where('project_id', '=', project.id).where('status', '=', 'pending').execute();
@@ -1072,6 +1158,8 @@ async function mutateOrder(req, res, u, data) {
   const pkgIndex = Number(data.pkg) || 0, pkg = list(service.packages)[pkgIndex];
   if (!pkg) return bad(res, 'Package not found.', 404);
   if (service.seller_id === u.id) return bad(res, 'You can’t order your own service.');
+  const seller = await db.selectFrom('wl_users').select('country_code').where('id', '=', service.seller_id).executeTakeFirst();
+  if (!payable(u.country_code, seller?.country_code)) return bad(res, NO_PAYMENTS);
   const price = Number(pkg.price || 0);
   const values = { service_id: service.id, pkg: pkgIndex, buyer_id: u.id, seller_id: service.seller_id, price, requirements: String(data.requirements || '') };
   if (payments.enabled) {
@@ -1107,11 +1195,25 @@ async function mutateOrderStatus(res, u, data, status) {
   return res.json({ ok: true });
 }
 
+// Places for the location fields: public, the same for everyone.
+app.get('/api/geo/:code', (req, res, next) => {
+  const code = String(req.params.code || '');
+  if (code === 'EE' || !ENABLED.includes(code)) return next();
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json(geoOf(code));
+});
+app.get('/api/geo/:code/:region', (req, res, next) => {
+  const code = String(req.params.code || ''), places = ENABLED.includes(code) ? placesOf(code, String(req.params.region || '')) : null;
+  if (!places) return next();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.json(places);
+});
+
 // Unknown API addresses get a 404 instead of the web page.
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
 // robots.txt, sitemap.xml and server-rendered public pages (see seo.mjs).
-const seo = createSeo({ db, categories, publicOrigin, cities: CITIES, indexHtmlPath: path.join(__dirname, 'dist', 'index.html') });
+const seo = createSeo({ db, categories, publicOrigin, cities: CITIES, countries: ENABLED, geoOf, placesOf, indexHtmlPath: path.join(__dirname, 'dist', 'index.html') });
 app.get('/robots.txt', seo.robots);
 app.get('/sitemap.xml', (req, res, next) => seo.sitemap(req, res).catch(next));
 
