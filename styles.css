@@ -645,11 +645,15 @@ a.pill-badge:hover{background:rgba(255,255,255,.25)}
 }
 .india-hero h1{overflow-wrap:anywhere}
 @media (max-width:560px){.india-hero h1{font-size:1.75rem;line-height:1.3}.india-hero .btn{white-space:normal}}
-.country-bar{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 20px}
+.country-bar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 22px}
 .country-bar label{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:14px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);color:#fff;font-weight:500;font-size:.9rem;max-width:100%}
 .country-bar select{width:auto;max-width:230px;min-width:0;padding:8px 10px;border:0;border-radius:10px;background:#fff;color:var(--ink);font-weight:600}
+/* The country choice is the main one: bigger and brighter than the language. */
+.country-bar label:first-child{gap:12px;padding:9px 9px 9px 18px;border-radius:18px;background:rgba(255,255,255,.24);border:2px solid rgba(255,255,255,.75);font-size:1.15rem;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.18)}
+.country-bar label:first-child select{max-width:300px;padding:12px 14px;border-radius:12px;font-size:1.05rem;font-weight:700}
 [dir=rtl] .country-bar label{padding:6px 14px 6px 6px}
-@media (max-width:560px){.country-bar label{width:100%}.country-bar label span{display:none}.country-bar select{flex:1;max-width:none}}
+[dir=rtl] .country-bar label:first-child{padding:9px 18px 9px 9px}
+@media (max-width:560px){.country-bar label{width:100%}.country-bar label span{display:none}.country-bar select{flex:1;max-width:none}.country-bar label:first-child{flex-wrap:wrap}.country-bar label:first-child span{display:inline}.country-bar label:first-child select{flex:1 1 100%;max-width:none}}
 .place-search{max-width:420px;margin:0 0 14px}
 .city-chip.more{background:var(--brand-soft);color:var(--brand);font-weight:600}
 .all-cities{columns:4 170px;margin-top:18px}
