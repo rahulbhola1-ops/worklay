@@ -115,6 +115,38 @@ The text is in `terms-page.js` (English, Estonian, Russian) and the version in `
 it again before posting, ordering, booking, sending proposals or publishing a profile. The accepted
 version and time are stored on the user. Company details come from `LEGAL` in `legal.js`.
 
+## Other countries (off by default)
+
+Estonia is always on. `COUNTRIES_ENABLED=IN,DE` (or `all`) switches on others from
+[countries.mjs](countries.mjs): 42 more in Europe, 45 in Asia, the United States, Canada and Australia. Each has its
+own page (`/germany`, `/india/kerala`, …), currency, languages and places: region → city → area in
+`geo/<CODE>.json`. `/countries` lists those that are on.
+
+- **Places**: `geo/<CODE>.json` lists the regions and `geo/<CODE>/<region>.json` their cities (500 people or more) and
+  areas. They come from [GeoNames](https://www.geonames.org) (CC BY 4.0), its postal places and, for the countries in
+  `OSM_PLACES`, OpenStreetMap (ODbL); the credits are on the country pages and in [geo/LICENSE.md](geo/LICENSE.md).
+  Rebuild with [scripts/build-geo.py](scripts/build-geo.py). Cities and areas are suggestions; smaller places can be
+  typed. Estonia's list is `geo/EE/estonia.json`.
+- **Accounts** belong to one country (`wl_users.country_code`), and each country's freelancers, services and
+  projects are listed separately.
+- **Language**, in this order: what the visitor chose, the language saved in the account, the region's own,
+  the browser's, the country's. Menus, sign-in, categories and the country pages are translated
+  ([i18n-world.js](i18n-world.js), [i18n-india.js](i18n-india.js), [i18n-asia.js](i18n-asia.js)); the dashboard, Terms, privacy policy and
+  emails are in English.
+- **Online booking, ordering and payment are refused outside Estonia by the server**: payments are in euros
+  and Stripe payouts are set up for Estonia. People find each other and send messages and proposals.
+- A visitor without a saved choice gets the country Cloudflare reports (`CF-IPCountry`), if it is on.
+
+- **Terms**: every country has its own ([terms-world.js](terms-world.js); Estonia's are in `terms-page.js`), accepted
+  and recorded per country (`DE:2026-11-26`). They are marked as drafts until the country is in `REVIEWED`.
+- **Country first**: visitors choose their country on their first visit and before signing up, including with
+  Google. Accounts can't change country.
+
+Before switching a country on: legal review for that country (terms, privacy, consumer and tax rules, ID
+documents) and a native check of its languages. Russia, Belarus, Iran and North Korea are left out because of
+sanctions, and China, Hong Kong and Macau by choice. Check sanctions again before switching on Afghanistan,
+Iraq, Lebanon, Myanmar, Syria or Yemen.
+
 ## Profile photos (Cloudflare R2, optional)
 
 Users can upload a profile photo (JPG, PNG or WebP, up to 3 MB) under **Dashboard → Profile
@@ -205,8 +237,9 @@ Access control is done on the server for every API call. `robots.txt` is not a s
 and Driving & Transport require a government ID (Driving also a driver's licence). Every category has
 subcategories (migration `0006`), which visitors can filter by on the freelancers page.
 
-**Own categories**: freelancers can create up to three categories during onboarding and add their own
-specialisations and skills. A name that already exists in any language is reused. A new category works
+**Own categories and subcategories**: freelancers can create up to three categories during onboarding, up to eight
+subcategories and their skills. Own subcategories are filters on the freelancers page straight away (per country);
+admins can make them official at `/admin/categories`. A name that already exists in any language is reused. A new category works
 straight away, but it stays off the home page and out of search engines until an admin approves it at
 `/admin/categories` (translate and approve, or merge into another). Categories for on-site work always
 require a government ID.

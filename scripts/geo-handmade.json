@@ -1,0 +1,1194 @@
+{
+ "IN": {
+  "regions": [
+   {
+    "slug": "andhra-pradesh",
+    "name": "Andhra Pradesh",
+    "langs": [
+     "te",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Visakhapatnam": [
+      "Gajuwaka",
+      "MVP Colony",
+      "Dwaraka Nagar",
+      "Madhurawada",
+      "Seethammadhara"
+     ],
+     "Vijayawada": [
+      "Benz Circle",
+      "Governorpet",
+      "Patamata",
+      "Moghalrajpuram"
+     ],
+     "Guntur": [
+      "Arundelpet",
+      "Brodipet"
+     ],
+     "Tirupati": [],
+     "Nellore": [],
+     "Kurnool": [],
+     "Rajahmundry": [],
+     "Kakinada": [],
+     "Anantapur": [],
+     "Kadapa": []
+    }
+   },
+   {
+    "slug": "arunachal-pradesh",
+    "name": "Arunachal Pradesh",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Itanagar": [],
+     "Naharlagun": [],
+     "Pasighat": [],
+     "Tawang": [],
+     "Ziro": []
+    }
+   },
+   {
+    "slug": "assam",
+    "name": "Assam",
+    "langs": [
+     "as",
+     "bn",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Guwahati": [
+      "Dispur",
+      "Paltan Bazaar",
+      "Beltola",
+      "Maligaon",
+      "Ganeshguri"
+     ],
+     "Silchar": [],
+     "Dibrugarh": [],
+     "Jorhat": [],
+     "Nagaon": [],
+     "Tinsukia": [],
+     "Tezpur": [],
+     "Bongaigaon": []
+    }
+   },
+   {
+    "slug": "bihar",
+    "name": "Bihar",
+    "langs": [
+     "hi",
+     "ur",
+     "en"
+    ],
+    "cities": {
+     "Patna": [
+      "Kankarbagh",
+      "Boring Road",
+      "Rajendra Nagar",
+      "Bailey Road",
+      "Danapur"
+     ],
+     "Gaya": [],
+     "Bhagalpur": [],
+     "Muzaffarpur": [],
+     "Darbhanga": [],
+     "Purnia": [],
+     "Arrah": [],
+     "Begusarai": []
+    }
+   },
+   {
+    "slug": "chhattisgarh",
+    "name": "Chhattisgarh",
+    "langs": [
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Raipur": [
+      "Shankar Nagar",
+      "Telibandha",
+      "Devendra Nagar"
+     ],
+     "Bhilai": [],
+     "Bilaspur": [],
+     "Korba": [],
+     "Durg": [],
+     "Raigarh": [],
+     "Jagdalpur": []
+    }
+   },
+   {
+    "slug": "goa",
+    "name": "Goa",
+    "langs": [
+     "en",
+     "mr",
+     "hi"
+    ],
+    "cities": {
+     "Panaji": [
+      "Miramar",
+      "Altinho",
+      "Dona Paula"
+     ],
+     "Margao": [],
+     "Vasco da Gama": [],
+     "Mapusa": [],
+     "Ponda": [],
+     "Calangute": []
+    }
+   },
+   {
+    "slug": "gujarat",
+    "name": "Gujarat",
+    "langs": [
+     "gu",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Ahmedabad": [
+      "Maninagar",
+      "Navrangpura",
+      "Satellite",
+      "Bopal",
+      "Vastrapur",
+      "SG Highway"
+     ],
+     "Surat": [
+      "Adajan",
+      "Vesu",
+      "Varachha",
+      "Katargam"
+     ],
+     "Vadodara": [
+      "Alkapuri",
+      "Gotri",
+      "Manjalpur"
+     ],
+     "Rajkot": [
+      "Kalawad Road",
+      "University Road"
+     ],
+     "Bhavnagar": [],
+     "Jamnagar": [],
+     "Gandhinagar": [],
+     "Junagadh": [],
+     "Anand": [],
+     "Vapi": []
+    }
+   },
+   {
+    "slug": "haryana",
+    "name": "Haryana",
+    "langs": [
+     "hi",
+     "pa",
+     "en"
+    ],
+    "cities": {
+     "Gurugram": [
+      "DLF Phase 1",
+      "DLF Phase 3",
+      "Sohna Road",
+      "Sector 14",
+      "Sector 56",
+      "Golf Course Road"
+     ],
+     "Faridabad": [
+      "NIT",
+      "Sector 15",
+      "Ballabhgarh"
+     ],
+     "Panipat": [],
+     "Ambala": [],
+     "Karnal": [],
+     "Hisar": [],
+     "Rohtak": [],
+     "Sonipat": [],
+     "Panchkula": [],
+     "Yamunanagar": []
+    }
+   },
+   {
+    "slug": "himachal-pradesh",
+    "name": "Himachal Pradesh",
+    "langs": [
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Shimla": [
+      "Mall Road",
+      "Sanjauli",
+      "Chhota Shimla"
+     ],
+     "Dharamshala": [],
+     "Manali": [],
+     "Solan": [],
+     "Mandi": [],
+     "Kullu": [],
+     "Hamirpur": []
+    }
+   },
+   {
+    "slug": "jharkhand",
+    "name": "Jharkhand",
+    "langs": [
+     "hi",
+     "bn",
+     "ur",
+     "en"
+    ],
+    "cities": {
+     "Ranchi": [
+      "Lalpur",
+      "Doranda",
+      "Kanke",
+      "Harmu"
+     ],
+     "Jamshedpur": [
+      "Bistupur",
+      "Sakchi",
+      "Kadma"
+     ],
+     "Dhanbad": [],
+     "Bokaro": [],
+     "Deoghar": [],
+     "Hazaribagh": [],
+     "Giridih": []
+    }
+   },
+   {
+    "slug": "karnataka",
+    "name": "Karnataka",
+    "langs": [
+     "kn",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Bengaluru": [
+      "Koramangala",
+      "Indiranagar",
+      "Whitefield",
+      "Jayanagar",
+      "HSR Layout",
+      "Electronic City",
+      "Marathahalli",
+      "Malleshwaram",
+      "Rajajinagar",
+      "Hebbal",
+      "BTM Layout",
+      "Yelahanka"
+     ],
+     "Mysuru": [
+      "Gokulam",
+      "Vijayanagar",
+      "Kuvempunagar"
+     ],
+     "Mangaluru": [
+      "Kadri",
+      "Bejai",
+      "Hampankatta"
+     ],
+     "Hubballi": [],
+     "Dharwad": [],
+     "Belagavi": [],
+     "Kalaburagi": [],
+     "Davanagere": [],
+     "Ballari": [],
+     "Shivamogga": [],
+     "Tumakuru": [],
+     "Udupi": []
+    }
+   },
+   {
+    "slug": "kerala",
+    "name": "Kerala",
+    "langs": [
+     "ml",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Thiruvananthapuram": [
+      "Kowdiar",
+      "Pattom",
+      "Kazhakkoottam",
+      "Vazhuthacaud"
+     ],
+     "Kochi": [
+      "Edappally",
+      "Kakkanad",
+      "Fort Kochi",
+      "Vyttila",
+      "Aluva",
+      "Kaloor"
+     ],
+     "Kozhikode": [
+      "Mavoor Road",
+      "Beypore"
+     ],
+     "Thrissur": [],
+     "Kollam": [],
+     "Kannur": [],
+     "Alappuzha": [],
+     "Kottayam": [],
+     "Palakkad": [],
+     "Malappuram": []
+    }
+   },
+   {
+    "slug": "madhya-pradesh",
+    "name": "Madhya Pradesh",
+    "langs": [
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Bhopal": [
+      "Arera Colony",
+      "MP Nagar",
+      "Kolar Road",
+      "Bairagarh"
+     ],
+     "Indore": [
+      "Vijay Nagar",
+      "Palasia",
+      "Rajwada",
+      "Bhawarkua"
+     ],
+     "Jabalpur": [],
+     "Gwalior": [],
+     "Ujjain": [],
+     "Sagar": [],
+     "Dewas": [],
+     "Satna": [],
+     "Ratlam": [],
+     "Rewa": []
+    }
+   },
+   {
+    "slug": "maharashtra",
+    "name": "Maharashtra",
+    "langs": [
+     "mr",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Mumbai": [
+      "Andheri",
+      "Bandra",
+      "Borivali",
+      "Dadar",
+      "Powai",
+      "Colaba",
+      "Kurla",
+      "Malad",
+      "Goregaon",
+      "Chembur",
+      "Mulund",
+      "Ghatkopar"
+     ],
+     "Pune": [
+      "Kothrud",
+      "Hinjawadi",
+      "Viman Nagar",
+      "Baner",
+      "Hadapsar",
+      "Koregaon Park",
+      "Wakad",
+      "Aundh"
+     ],
+     "Nagpur": [
+      "Dharampeth",
+      "Sitabuldi",
+      "Manish Nagar"
+     ],
+     "Thane": [
+      "Ghodbunder Road",
+      "Naupada",
+      "Kolshet"
+     ],
+     "Navi Mumbai": [
+      "Vashi",
+      "Nerul",
+      "Kharghar",
+      "Belapur",
+      "Airoli"
+     ],
+     "Nashik": [
+      "College Road",
+      "Gangapur Road",
+      "Indira Nagar"
+     ],
+     "Chhatrapati Sambhajinagar": [],
+     "Solapur": [],
+     "Kolhapur": [],
+     "Amravati": [],
+     "Sangli": [],
+     "Jalgaon": [],
+     "Kalyan": [],
+     "Vasai-Virar": []
+    }
+   },
+   {
+    "slug": "manipur",
+    "name": "Manipur",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Imphal": [],
+     "Thoubal": [],
+     "Churachandpur": [],
+     "Bishnupur": [],
+     "Ukhrul": []
+    }
+   },
+   {
+    "slug": "meghalaya",
+    "name": "Meghalaya",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Shillong": [
+      "Laitumkhrah",
+      "Police Bazar",
+      "Laban"
+     ],
+     "Tura": [],
+     "Jowai": [],
+     "Nongstoin": []
+    }
+   },
+   {
+    "slug": "mizoram",
+    "name": "Mizoram",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Aizawl": [],
+     "Lunglei": [],
+     "Champhai": [],
+     "Serchhip": []
+    }
+   },
+   {
+    "slug": "nagaland",
+    "name": "Nagaland",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Kohima": [],
+     "Dimapur": [],
+     "Mokokchung": [],
+     "Tuensang": [],
+     "Wokha": []
+    }
+   },
+   {
+    "slug": "odisha",
+    "name": "Odisha",
+    "langs": [
+     "or",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Bhubaneswar": [
+      "Saheed Nagar",
+      "Patia",
+      "Khandagiri",
+      "Nayapalli",
+      "Jaydev Vihar"
+     ],
+     "Cuttack": [
+      "Badambadi",
+      "CDA"
+     ],
+     "Rourkela": [],
+     "Berhampur": [],
+     "Sambalpur": [],
+     "Puri": [],
+     "Balasore": [],
+     "Bhadrak": []
+    }
+   },
+   {
+    "slug": "punjab",
+    "name": "Punjab",
+    "langs": [
+     "pa",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Ludhiana": [
+      "Model Town",
+      "Sarabha Nagar",
+      "Civil Lines"
+     ],
+     "Amritsar": [
+      "Ranjit Avenue",
+      "Lawrence Road",
+      "Hall Bazaar"
+     ],
+     "Jalandhar": [
+      "Model Town",
+      "Urban Estate"
+     ],
+     "Patiala": [],
+     "Bathinda": [],
+     "Mohali": [
+      "Phase 7",
+      "Sector 70"
+     ],
+     "Hoshiarpur": [],
+     "Pathankot": [],
+     "Moga": [],
+     "Firozpur": []
+    }
+   },
+   {
+    "slug": "rajasthan",
+    "name": "Rajasthan",
+    "langs": [
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Jaipur": [
+      "Malviya Nagar",
+      "Vaishali Nagar",
+      "Mansarovar",
+      "C-Scheme",
+      "Raja Park",
+      "Jagatpura"
+     ],
+     "Jodhpur": [
+      "Ratanada",
+      "Sardarpura"
+     ],
+     "Udaipur": [
+      "Hiran Magri",
+      "Fatehpura"
+     ],
+     "Kota": [
+      "Talwandi",
+      "Vigyan Nagar"
+     ],
+     "Ajmer": [],
+     "Bikaner": [],
+     "Alwar": [],
+     "Bhilwara": [],
+     "Sikar": [],
+     "Sri Ganganagar": []
+    }
+   },
+   {
+    "slug": "sikkim",
+    "name": "Sikkim",
+    "langs": [
+     "en",
+     "hi"
+    ],
+    "cities": {
+     "Gangtok": [],
+     "Namchi": [],
+     "Geyzing": [],
+     "Mangan": [],
+     "Singtam": []
+    }
+   },
+   {
+    "slug": "tamil-nadu",
+    "name": "Tamil Nadu",
+    "langs": [
+     "ta",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Chennai": [
+      "Adyar",
+      "Anna Nagar",
+      "T. Nagar",
+      "Velachery",
+      "Tambaram",
+      "Mylapore",
+      "Porur",
+      "Guindy",
+      "Perambur",
+      "OMR"
+     ],
+     "Coimbatore": [
+      "RS Puram",
+      "Gandhipuram",
+      "Peelamedu",
+      "Saibaba Colony"
+     ],
+     "Madurai": [
+      "KK Nagar",
+      "Anna Nagar",
+      "Goripalayam"
+     ],
+     "Tiruchirappalli": [
+      "Srirangam",
+      "Thillai Nagar"
+     ],
+     "Salem": [],
+     "Tirunelveli": [],
+     "Tiruppur": [],
+     "Erode": [],
+     "Vellore": [],
+     "Thoothukudi": [],
+     "Thanjavur": [],
+     "Hosur": []
+    }
+   },
+   {
+    "slug": "telangana",
+    "name": "Telangana",
+    "langs": [
+     "te",
+     "ur",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Hyderabad": [
+      "Banjara Hills",
+      "Jubilee Hills",
+      "Gachibowli",
+      "Hitech City",
+      "Madhapur",
+      "Kukatpally",
+      "Ameerpet",
+      "Begumpet",
+      "Dilsukhnagar",
+      "Charminar",
+      "LB Nagar"
+     ],
+     "Secunderabad": [
+      "Marredpally",
+      "Trimulgherry"
+     ],
+     "Warangal": [
+      "Hanamkonda",
+      "Kazipet"
+     ],
+     "Nizamabad": [],
+     "Karimnagar": [],
+     "Khammam": [],
+     "Mahbubnagar": [],
+     "Ramagundam": []
+    }
+   },
+   {
+    "slug": "tripura",
+    "name": "Tripura",
+    "langs": [
+     "bn",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Agartala": [],
+     "Udaipur": [],
+     "Dharmanagar": [],
+     "Kailashahar": [],
+     "Belonia": []
+    }
+   },
+   {
+    "slug": "uttar-pradesh",
+    "name": "Uttar Pradesh",
+    "langs": [
+     "hi",
+     "ur",
+     "en"
+    ],
+    "cities": {
+     "Lucknow": [
+      "Gomti Nagar",
+      "Hazratganj",
+      "Aliganj",
+      "Indira Nagar",
+      "Alambagh"
+     ],
+     "Noida": [
+      "Sector 18",
+      "Sector 62",
+      "Sector 137",
+      "Sector 15"
+     ],
+     "Ghaziabad": [
+      "Indirapuram",
+      "Vaishali",
+      "Raj Nagar"
+     ],
+     "Kanpur": [
+      "Swaroop Nagar",
+      "Kakadeo",
+      "Civil Lines",
+      "Kidwai Nagar",
+      "Govind Nagar",
+      "Kalyanpur",
+      "Arya Nagar",
+      "Shastri Nagar",
+      "Panki",
+      "Barra",
+      "Yashoda Nagar",
+      "Harsh Nagar",
+      "Tilak Nagar",
+      "Lal Bangla",
+      "Chakeri",
+      "Naubasta",
+      "Rawatpur",
+      "Gwaltoli",
+      "Mall Road",
+      "Sisamau",
+      "Fazalganj",
+      "Ashok Nagar",
+      "Azad Nagar",
+      "Vikas Nagar",
+      "Ratan Lal Nagar",
+      "Keshav Nagar",
+      "Damodar Nagar",
+      "Shyam Nagar",
+      "Jajmau",
+      "Nawabganj",
+      "Pandu Nagar",
+      "Generalganj",
+      "Moti Jheel",
+      "Juhi",
+      "Saket Nagar",
+      "Vishnupuri",
+      "Kaushalpuri",
+      "Benajhabar",
+      "Tatmil",
+      "Parade",
+      "Nayaganj",
+      "Collectorganj",
+      "Birhana Road",
+      "Indira Nagar",
+      "Awas Vikas",
+      "Hanspuram",
+      "Gujaini",
+      "Babupurwa",
+      "Armapur",
+      "Kanpur Cantonment"
+     ],
+     "Agra": [
+      "Tajganj",
+      "Sikandra",
+      "Kamla Nagar"
+     ],
+     "Varanasi": [
+      "Lanka",
+      "Sigra",
+      "Assi"
+     ],
+     "Prayagraj": [
+      "Civil Lines",
+      "George Town"
+     ],
+     "Meerut": [],
+     "Bareilly": [],
+     "Aligarh": [],
+     "Gorakhpur": [],
+     "Moradabad": [],
+     "Greater Noida": [],
+     "Jhansi": [],
+     "Mathura": [],
+     "Ayodhya": []
+    }
+   },
+   {
+    "slug": "uttarakhand",
+    "name": "Uttarakhand",
+    "langs": [
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Dehradun": [
+      "Rajpur Road",
+      "Clement Town",
+      "Ballupur"
+     ],
+     "Haridwar": [],
+     "Rishikesh": [],
+     "Haldwani": [],
+     "Roorkee": [],
+     "Nainital": [],
+     "Rudrapur": [],
+     "Kashipur": []
+    }
+   },
+   {
+    "slug": "west-bengal",
+    "name": "West Bengal",
+    "langs": [
+     "bn",
+     "ur",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Kolkata": [
+      "Salt Lake",
+      "New Town",
+      "Park Street",
+      "Ballygunge",
+      "Behala",
+      "Garia",
+      "Dum Dum",
+      "Tollygunge",
+      "Jadavpur",
+      "Alipore"
+     ],
+     "Howrah": [
+      "Shibpur",
+      "Liluah"
+     ],
+     "Siliguri": [
+      "Pradhan Nagar",
+      "Sevoke Road"
+     ],
+     "Durgapur": [],
+     "Asansol": [],
+     "Kharagpur": [],
+     "Bardhaman": [],
+     "Malda": [],
+     "Darjeeling": [],
+     "Haldia": []
+    }
+   },
+   {
+    "slug": "andaman-and-nicobar",
+    "name": "Andaman and Nicobar Islands",
+    "group": "Union territories",
+    "langs": [
+     "hi",
+     "bn",
+     "ta",
+     "en"
+    ],
+    "cities": {
+     "Sri Vijaya Puram (Port Blair)": [],
+     "Diglipur": [],
+     "Rangat": []
+    }
+   },
+   {
+    "slug": "chandigarh",
+    "name": "Chandigarh",
+    "group": "Union territories",
+    "langs": [
+     "pa",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Chandigarh": [
+      "Sector 17",
+      "Sector 22",
+      "Sector 35",
+      "Manimajra",
+      "Industrial Area"
+     ]
+    }
+   },
+   {
+    "slug": "dadra-nagar-haveli-daman-diu",
+    "name": "Dadra and Nagar Haveli and Daman and Diu",
+    "group": "Union territories",
+    "langs": [
+     "gu",
+     "mr",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Daman": [],
+     "Diu": [],
+     "Silvassa": []
+    }
+   },
+   {
+    "slug": "delhi",
+    "name": "Delhi",
+    "group": "Union territories",
+    "langs": [
+     "hi",
+     "pa",
+     "ur",
+     "en"
+    ],
+    "cities": {
+     "New Delhi": [
+      "Connaught Place",
+      "Karol Bagh",
+      "Chanakyapuri"
+     ],
+     "South Delhi": [
+      "Saket",
+      "Hauz Khas",
+      "Greater Kailash",
+      "Lajpat Nagar",
+      "Vasant Kunj"
+     ],
+     "North Delhi": [
+      "Rohini",
+      "Pitampura",
+      "Model Town",
+      "Civil Lines"
+     ],
+     "East Delhi": [
+      "Laxmi Nagar",
+      "Mayur Vihar",
+      "Preet Vihar"
+     ],
+     "West Delhi": [
+      "Dwarka",
+      "Janakpuri",
+      "Rajouri Garden",
+      "Punjabi Bagh"
+     ]
+    }
+   },
+   {
+    "slug": "jammu-and-kashmir",
+    "name": "Jammu and Kashmir",
+    "group": "Union territories",
+    "langs": [
+     "ur",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Srinagar": [
+      "Lal Chowk",
+      "Rajbagh",
+      "Hyderpora"
+     ],
+     "Jammu": [
+      "Gandhi Nagar",
+      "Trikuta Nagar",
+      "Channi Himmat"
+     ],
+     "Anantnag": [],
+     "Baramulla": [],
+     "Udhampur": [],
+     "Kathua": []
+    }
+   },
+   {
+    "slug": "ladakh",
+    "name": "Ladakh",
+    "group": "Union territories",
+    "langs": [
+     "hi",
+     "ur",
+     "en"
+    ],
+    "cities": {
+     "Leh": [],
+     "Kargil": []
+    }
+   },
+   {
+    "slug": "lakshadweep",
+    "name": "Lakshadweep",
+    "group": "Union territories",
+    "langs": [
+     "ml",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Kavaratti": [],
+     "Agatti": [],
+     "Minicoy": []
+    }
+   },
+   {
+    "slug": "puducherry",
+    "name": "Puducherry",
+    "group": "Union territories",
+    "langs": [
+     "ta",
+     "te",
+     "ml",
+     "hi",
+     "en"
+    ],
+    "cities": {
+     "Puducherry": [
+      "White Town",
+      "Lawspet",
+      "Reddiarpalayam"
+     ],
+     "Karaikal": [],
+     "Mahe": [],
+     "Yanam": []
+    }
+   }
+  ],
+  "aliases": {
+   "NCT": "Delhi",
+   "Andaman and Nicobar": "Andaman and Nicobar Islands"
+  }
+ },
+ "SG": {
+  "regions": [
+   {
+    "slug": "central-region",
+    "name": "Central Region",
+    "cities": {
+     "Ang Mo Kio": [],
+     "Bishan": [],
+     "Bukit Merah": [
+      "Tiong Bahru",
+      "Redhill",
+      "HarbourFront"
+     ],
+     "Bukit Timah": [],
+     "Downtown Core": [
+      "Raffles Place",
+      "Marina Bay",
+      "Bugis"
+     ],
+     "Geylang": [],
+     "Kallang": [],
+     "Marine Parade": [],
+     "Newton": [],
+     "Novena": [],
+     "Orchard": [],
+     "Queenstown": [
+      "Commonwealth",
+      "Holland Village"
+     ],
+     "Toa Payoh": [],
+     "Tanglin": []
+    }
+   },
+   {
+    "slug": "east-region",
+    "name": "East Region",
+    "cities": {
+     "Bedok": [],
+     "Changi": [],
+     "Pasir Ris": [],
+     "Paya Lebar": [],
+     "Tampines": []
+    }
+   },
+   {
+    "slug": "north-region",
+    "name": "North Region",
+    "cities": {
+     "Mandai": [],
+     "Sembawang": [],
+     "Woodlands": [],
+     "Yishun": []
+    }
+   },
+   {
+    "slug": "north-east-region",
+    "name": "North-East Region",
+    "cities": {
+     "Hougang": [],
+     "Punggol": [],
+     "Seletar": [],
+     "Sengkang": [],
+     "Serangoon": []
+    }
+   },
+   {
+    "slug": "west-region",
+    "name": "West Region",
+    "cities": {
+     "Bukit Batok": [],
+     "Bukit Panjang": [],
+     "Choa Chu Kang": [],
+     "Clementi": [],
+     "Jurong East": [],
+     "Jurong West": [],
+     "Tuas": []
+    }
+   }
+  ]
+ },
+ "EE": {
+  "regions": [
+   {
+    "slug": "estonia",
+    "name": "Estonia",
+    "cities": {
+     "Tallinn": [
+      "Haabersti",
+      "Kesklinn",
+      "Kristiine",
+      "Lasnamäe",
+      "Mustamäe",
+      "Nõmme",
+      "Pirita",
+      "Põhja-Tallinn"
+     ],
+     "Tartu": [
+      "Annelinn",
+      "Karlova",
+      "Kesklinn",
+      "Maarjamõisa",
+      "Ropka",
+      "Supilinn",
+      "Tammelinn",
+      "Ülejõe"
+     ],
+     "Pärnu": [
+      "Kesklinn",
+      "Raeküla",
+      "Rannarajoon",
+      "Vana-Pärnu",
+      "Ülejõe"
+     ],
+     "Narva": [
+      "Kalevi",
+      "Kesklinn",
+      "Kreenholm",
+      "Pähklimäe",
+      "Soldino"
+     ],
+     "Kohtla-Järve": [
+      "Ahtme",
+      "Järve",
+      "Sompa"
+     ],
+     "Viljandi": [
+      "Kesklinn",
+      "Paalalinn",
+      "Peetrimõisa"
+     ]
+    }
+   }
+  ]
+ }
+}

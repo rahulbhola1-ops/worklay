@@ -3,7 +3,12 @@
    through the API and then reloads that data. */
 import { privacyPage, cookiesPage } from './legal.js';
 import { termsPage } from './terms-page.js';
+import { termsWorld } from './terms-world.js';
 import { blogHtml, localPost } from './blog-text.mjs';
+import { COUNTRIES, LANG_NAMES, countryBySlug, langsFor, formatMoney, currencySign, localeFor, RTL, foldName } from './countries.mjs';
+import { I18N_INDIA, EN_PLACES } from './i18n-india.js';
+import { I18N_WORLD, ET_PLACES, RU_PLACES } from './i18n-world.js';
+import { I18N_ASIA } from './i18n-asia.js';
 
 (() => {
 'use strict';
@@ -29,7 +34,7 @@ let CATEGORIES = [ // replaced by the server's list (wl_categories) on load
 const NO_CATEGORY = { id: '', name: 'Other', nameEt: 'Muu', nameRu: 'Другое', ico: '🧩', color: '#eef1ff', serviceType: 'REMOTE', requiresVerification: false, requiredDocuments: [], perks: [], subcategories: [] };
 const catById = id => CATEGORIES.find(c => c.id === id) || NO_CATEGORY;
 // Category or subcategory name in the chosen language. Freelancers can create categories, so always esc() it in HTML.
-const catName = c => (lang === 'et' ? c.nameEt : lang === 'ru' ? c.nameRu : '') || c.name;
+const catName = c => (lang === 'et' ? c.nameEt : lang === 'ru' ? c.nameRu : lang === 'en' ? '' : (I18N[lang] || {})['category.' + c.id]) || c.name;
 const approvedCats = () => CATEGORIES.filter(c => c.status !== 'NEW');
 // What the current user can pick: approved categories, their own new ones, and the one they're in.
 const pickableCats = (current = '') => CATEGORIES.filter(c => c.status !== 'NEW' || c.id === current || (db && db.me && c.createdBy === db.me));
@@ -39,10 +44,13 @@ let CATEGORY_ICONS = ['🧩'], APPROVAL_DAYS = 7, TERMS_VERSION = '';
 /* ---------- freelancer profile helpers: pricing, weekly hours, tutoring, documents ---------- */
 const WEEKDAYS = [['MON', 'Mon'], ['TUE', 'Tue'], ['WED', 'Wed'], ['THU', 'Thu'], ['FRI', 'Fri'], ['SAT', 'Sat'], ['SUN', 'Sun']];
 const TIMES = [['morning', 'Morning', '8–12', 480, 720], ['afternoon', 'Afternoon', '12–17', 720, 1020], ['evening', 'Evening', '17–21', 1020, 1260]];
-const TUTOR_SUBJECTS = ['Mathematics', 'Estonian', 'English', 'Russian', 'German', 'Physics', 'Chemistry', 'Biology', 'Geography', 'History', 'Computer science', 'Music', 'Art', 'Exam preparation'];
-const TUTOR_LEVELS = ['Grades 1–4', 'Grades 5–9', 'Grades 10–12', 'University', 'Adults'];
+const tutorSubjects = () => (isIN() ? ['Mathematics', 'English', 'Hindi', 'Regional language', 'Sanskrit', 'Physics', 'Chemistry', 'Biology', 'Social science', 'Accountancy', 'Economics', 'Computer science', 'Music', 'Art', 'JEE / NEET preparation', 'Exam preparation']
+  : abroad() ? ['Mathematics', 'English', 'Native language', 'Foreign languages', 'Physics', 'Chemistry', 'Biology', 'Geography', 'History', 'Computer science', 'Music', 'Art', 'Exam preparation']
+  : ['Mathematics', 'Estonian', 'English', 'Russian', 'German', 'Physics', 'Chemistry', 'Biology', 'Geography', 'History', 'Computer science', 'Music', 'Art', 'Exam preparation']);
+const tutorLevels = () => (isIN() ? ['Class 1–5', 'Class 6–8', 'Class 9–10', 'Class 11–12', 'College', 'Adults'] : abroad() ? ['Primary school', 'Lower secondary', 'Upper secondary / high school', 'University', 'Adults'] : ['Grades 1–4', 'Grades 5–9', 'Grades 10–12', 'University', 'Adults']);
 const PRICING = { HOURLY: ['Hourly', 'per hour'], FIXED_PACKAGE: ['Package / session', 'per session'], PER_EVENT: ['Per event', 'per event'] };
 const SERVICE_TYPES = { REMOTE: '🌐 Remote', ON_SITE: '📍 On-site', HYBRID: '🔀 Online or on-site' };
+const docHelp = type => (isIN() ? { GOVERNMENT_ID: 'Passport, driving licence or voter ID. If you use Aadhaar, upload only the masked version.', BACKGROUND_CHECK: 'Optional: a police clearance certificate, as a PDF or photo.' }[type] : abroad() && type === 'BACKGROUND_CHECK' ? 'Optional: a criminal record certificate, as a PDF or photo.' : '') || DOC_INFO[type][1];
 const DOC_INFO = {
   GOVERNMENT_ID: ['Government ID', 'Passport or ID card. A clear photo of the side with your photo.'],
   DRIVERS_LICENSE: ['Driver’s licence', 'Both sides of a valid driving licence.'],
@@ -51,7 +59,13 @@ const DOC_INFO = {
 let SLOT_MINUTES = [30, 45, 60, 90, 120, 180, 240, 300, 360, 480];
 const splitList = v => String(v || '').split(',').map(x => x.trim()).filter(Boolean);
 const chk = (name, value, label, on, extra = '') => `<label class="chk"><input type="checkbox" name="${name}" value="${esc(value)}" ${on ? 'checked' : ''}>${label}${extra}</label>`;
-const areaChecks = (city, chosen = []) => (CITIES[city] || []).map(a => chk('areas', a, esc(a), chosen.includes(a))).join('') || '<span class="small muted">Choose your city first.</span>';
+// Areas a freelancer covers. Long lists get a search box; chosen ones always stay visible.
+function areaChecks(city, chosen = [], state = '', text = '') {
+  const all = areasOf(city, state), picked = chosen.filter(Boolean);
+  if (!all.length && !picked.length) return '<span class="small muted">Choose your city first.</span>';
+  const shown = [...new Set([...picked, ...bestMatches(all, text, 40)])];
+  return (all.length > 40 ? `<input type="search" data-role="cover-search" value="${esc(text)}" placeholder="Search ${all.length} areas" aria-label="Search areas" style="flex:1 1 100%">` : '') + shown.map(a => chk('areas', a, esc(a), picked.includes(a))).join('');
+}
 const minutesOf = t => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 const durationText = m => m % 60 ? (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`) : `${m / 60} h`;
@@ -88,6 +102,46 @@ let GOOGLE_AUTH = false; // true when the server has Google sign-in configured
 let PHOTO_UPLOADS = false, MAX_PHOTO_MB = 3; // profile photos (Cloudflare R2)
 let CARD_PAYMENTS = false; // true when the server has Stripe configured: customers pay by card, freelancers are paid through Stripe
 
+/* ---------- country ----------
+   `site` is the country being browsed: the account's own country when logged in, otherwise the
+   visitor's choice. `viewCountry` is the country of the page being shown (a profile opened from a
+   link may belong to another one) and decides the currency. The server says which countries are on. */
+const SITE_KEY = 'worklay-country';
+let ON = ['EE'], VISITOR = 'EE', site = 'EE', viewCountry = 'EE';
+const GEO = {}; // regions of the countries seen so far, from /api/geo
+const isIN = () => site === 'IN', abroad = () => site !== 'EE';
+const countryOf = o => (o && o.countryCode) || 'EE';
+const here = o => countryOf(o) === site;
+const currency = () => currencySign(viewCountry);
+const countryRoute = name => { const c = countryBySlug(name); return c && c.code !== 'EE' && ON.includes(c.code) ? c : null; };
+function savedSite() { try { const s = localStorage.getItem(SITE_KEY); return ON.includes(s) ? s : null; } catch (e) { return null; } }
+function saveSite(c) { try { localStorage.setItem(SITE_KEY, c); } catch (e) {} }
+function pickSite(name, args) {
+  const u = me(), route = countryRoute(name), own = u && u.role !== 'admin';
+  if (route && !own) saveSite(route.code);
+  const zone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return ''; } })();
+  const guess = VISITOR !== 'EE' ? VISITOR : ['Asia/Kolkata', 'Asia/Calcutta'].includes(zone) && ON.includes('IN') ? 'IN' : 'EE';
+  site = own ? countryOf(u) : route ? route.code : savedSite() || guess;
+  if (!COUNTRIES[site]) site = 'EE';
+  const thing = name === 'user' ? user(args[0]) : name === 'project' ? project(args[0]) : name === 'service' && service(args[0]) ? user(service(args[0]).sellerId) : null;
+  viewCountry = thing ? countryOf(thing) : site;
+}
+// Loads a country's places once. Returns true if they are there already.
+const geoReady = code => code === 'EE' || !!GEO[code];
+async function loadGeo(code) {
+  const r = await fetch(`/api/geo/${code}`);
+  GEO[code] = r.ok ? await r.json() : { regions: [] };
+}
+// Cities and areas of a region: { city: [areas] }, biggest cities first. Loaded when needed.
+const PLACES = {}, placeLoads = {};
+function loadPlaces(slug, code = site) {
+  const key = `${code}/${slug}`;
+  if (!slug || code === 'EE' || PLACES[key]) return Promise.resolve();
+  return placeLoads[key] ||= fetch(`/api/geo/${code}/${encodeURIComponent(slug)}`).then(r => (r.ok ? r.json() : {})).catch(() => ({})).then(x => { PLACES[key] = x; delete placeLoads[key]; });
+}
+const regions = (code = site) => (GEO[code] || { regions: [] }).regions;
+const regionBySlug = (slug, code = site) => regions(code).find(r => r.slug === slug) || null;
+
 // Cities and their areas/districts. The live list comes from api/config.php.
 let CITIES = {
   'Tallinn': ['Haabersti', 'Kesklinn', 'Kristiine', 'Lasnamäe', 'Mustamäe', 'Nõmme', 'Pirita', 'Põhja-Tallinn'],
@@ -97,20 +151,53 @@ let CITIES = {
   'Kohtla-Järve': ['Ahtme', 'Järve', 'Sompa'],
   'Viljandi': ['Kesklinn', 'Paalalinn', 'Peetrimõisa'],
 };
-const locStr = o => o && o.city ? (o.area ? `${o.area}, ${o.city}` : o.city) : '';
-function locationFields(city = '', area = '', { required = false, any = false } = {}) {
+const titleCase = s => String(s || '').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+const stateName = (slug, code = site) => (regionBySlug(slug, code) || {}).name || titleCase(slug);
+const locStr = o => (o && o.city ? (o.area ? `${o.area}, ${o.city}` : o.city) + (o.state ? `, ${stateName(o.state, countryOf(o) === 'EE' ? site : countryOf(o))}` : '') : '');
+const citiesOf = state => PLACES[`${site}/${state}`] || {};
+const areasOf = (city, state = '') => (abroad() ? citiesOf(state)[cityKey(city, state)] || [] : CITIES[city] || []);
+// Suggestions for what is typed: names that start with it first, at most 80.
+const MAX_OPTIONS = 80, fold = foldName;
+function bestMatches(items, text, max = MAX_OPTIONS) {
+  const q = fold(text || '').trim(); if (!q) return items.slice(0, max);
+  const first = [], later = [];
+  for (const x of items) { const k = fold(x); if (k.startsWith(q)) first.push(x); else if (k.includes(q)) later.push(x); if (first.length >= max) break; }
+  return [...first, ...later].slice(0, max);
+}
+const dataOptions = (items, text = '') => bestMatches(items, text).map(x => `<option value="${esc(x)}"></option>`).join('');
+// Fill the suggestions of a location form from what is chosen and typed so far.
+function fillPlaces(form) {
+  const at = r => form && form.querySelector(`[data-role="${r}"]`); if (!at('state')) return;
+  const state = at('state').value, city = at('city').value;
+  at('city-list').innerHTML = dataOptions(Object.keys(citiesOf(state)), city);
+  at('area-list').innerHTML = dataOptions(areasOf(cityKey(city, state), state), at('area').value);
+}
+// Forms that open with a region already chosen: load its places, then fill in.
+function loadFormPlaces() {
+  document.querySelectorAll('[data-role="state"]').forEach(s => { if (s.value) loadPlaces(s.value).then(() => { if (s.isConnected) { fillPlaces(s.form); const c = s.form.querySelector('[data-role="cover-areas"]'); if (c && OB) c.innerHTML = areaChecks(OB.city, OB.serviceAreas, s.value); } }); });
+}
+// The usual spelling of a typed city.
+const cityKey = (city, state) => { const all = citiesOf(state); return all[city] ? city : (String(city).trim() && Object.keys(all).find(c => foldName(c) === foldName(String(city).trim()))) || city; };
+let listId = 0;
+function locationFields(city = '', area = '', { required = false, any = false, state = '' } = {}) {
   const req = required ? 'required' : '';
+  if (abroad()) { // region → city → area; cities and areas are suggestions, smaller places can be typed
+    const id = ++listId;
+    return `<div class="field"><label>${regionWord()}</label><select name="state" data-role="state" ${req}><option value="">${t('loc.selectState')}</option>${regions().map(s => `<option value="${s.slug}" ${s.slug === state ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
+    <div class="row"><div class="field"><label>${t('loc.city')}</label><input name="city" data-role="city" list="cities-${id}" value="${esc(city)}" maxlength="60" autocomplete="off" placeholder="${any ? esc(t('hero.allCities')) : ''}" ${req}><datalist id="cities-${id}" data-role="city-list">${dataOptions(Object.keys(citiesOf(state)))}</datalist></div>
+    <div class="field"><label>${t('loc.area')}</label><input name="area" data-role="area" list="areas-${id}" value="${esc(area)}" maxlength="60" autocomplete="off" ${req}><datalist id="areas-${id}" data-role="area-list">${dataOptions(areasOf(city, state))}</datalist></div></div>`;
+  }
   const areas = CITIES[city] || [];
   return `<div class="row">
     <div class="field"><label>${t('loc.city')}</label><select name="city" data-role="city" ${req}><option value="">${any ? t('hero.allCities') : t('loc.selectCity')}</option>${Object.keys(CITIES).map(c => `<option ${c === city ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
     <div class="field"><label>${t('loc.area')}</label><select name="area" data-role="area" data-any="${any ? 1 : ''}" ${req} ${areas.length ? '' : 'disabled'}><option value="">${any ? t('loc.allAreas') : t('loc.selectArea')}</option>${areas.map(a => `<option ${a === area ? 'selected' : ''}>${a}</option>`).join('')}</select></div></div>`;
 }
 // Proximity: 2 = same area, 1 = same city, 0 = elsewhere
-const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city ? 0 : (a.area && (a.area === b.area || (b.serviceAreas || []).includes(a.area)) ? 2 : 1);
+const proximity = (a, b) => !a || !b || !a.city || a.city !== b.city || (a.state || '') !== (b.state || '') || countryOf(a) !== countryOf(b) ? 0 : (a.area && (a.area === b.area || (b.serviceAreas || []).includes(a.area)) ? 2 : 1);
 const proxTag = o => { const u = me(); if (!u || !u.city || u.id === o.id) return ''; const p = proximity(u, o); return p === 2 ? '<span class="tag green">📍 Your area</span>' : p === 1 ? '<span class="tag">📍 Your city</span>' : ''; };
 
 /* ---------- i18n ---------- */
-const LANGS = { en: 'English', et: 'Eesti', ru: 'Русский' };
+const LANGS = Object.fromEntries(Object.entries(LANG_NAMES).map(([k, v]) => [k, v[0]]));
 const I18N = {
   en: {},
   et: {
@@ -122,7 +209,7 @@ const I18N = {
     'common.viewall': 'Vaata kõiki', 'common.send': 'Saada', 'common.follow': 'Jälgi', 'common.following': 'Jälgid', 'common.message': 'Saada sõnum', 'common.order': 'Telli',
     'language.label': 'Keel', 'language.select': 'Vali keel', 'language.en': 'English', 'language.et': 'Eesti', 'language.ru': 'Vene',
     'hero.search': 'Otsi', 'hero.allCities': 'Kõik linnad', 'hero.searchIn': 'Otsi valdkonnas', 'hero.popular': 'Populaarne:', 'hero.hire': 'Palgata vabakutseline', 'hero.earn': 'Alusta teenimist →',
-    'hero.local': 'Kohalikud spetsialistid {count} Eesti linnas', 'hero.near': 'Spetsialistid sinu lähedal', 'hero.searchArea': 'Otsi linna ja piirkonna järgi',
+    'hero.local': 'Kohalikud spetsialistid üle Eesti', 'hero.near': 'Spetsialistid sinu lähedal', 'hero.searchArea': 'Otsi linna ja piirkonna järgi',
     'hero.verified': 'Kontrollitud vabakutselised', 'hero.idChecked': 'Meie meeskonna poolt kontrollitud', 'hero.proposals': 'Saa pakkumisi kiiresti', 'hero.postFree': 'Postita projekt tasuta',
     'trust.cities': '{cities} linna, {areas} piirkonda', 'trust.nearby': 'Leia abi lähedalt', 'trust.verified': 'Isikutuvastusega spetsialistid', 'trust.documents': 'Dokumendid on kontrollitud', 'trust.pay': 'Maksa pärast töö valmimist', 'trust.release': 'Raha vabastatakse pärast sinu kinnitust', 'trust.free': 'Liitumine on tasuta', 'trust.post': 'Postita projekt tasuta',
     'home.safe': 'Lihtne ja turvaline', 'home.customer': '🧑‍💼 Klientidele', 'home.freelancer': '🛠️ Vabakutselistele',
@@ -148,7 +235,7 @@ const I18N = {
     'common.viewall': 'Смотреть все', 'common.send': 'Отправить', 'common.follow': 'Подписаться', 'common.following': 'Вы подписаны', 'common.message': 'Написать', 'common.order': 'Заказать',
     'language.label': 'Язык', 'language.select': 'Выберите язык', 'language.en': 'Английский', 'language.et': 'Эстонский', 'language.ru': 'Русский',
     'hero.search': 'Поиск', 'hero.allCities': 'Все города', 'hero.searchIn': 'Искать в разделе', 'hero.popular': 'Популярное:', 'hero.hire': 'Нанять фрилансера', 'hero.earn': 'Начать зарабатывать →',
-    'hero.local': 'Местные специалисты в городах Эстонии ({count})', 'hero.near': 'Специалисты рядом с вами', 'hero.searchArea': 'Поиск по городу и району',
+    'hero.local': 'Местные специалисты по всей Эстонии', 'hero.near': 'Специалисты рядом с вами', 'hero.searchArea': 'Поиск по городу и району',
     'hero.verified': 'Проверенные фрилансеры', 'hero.idChecked': 'Личность проверена нашей командой', 'hero.proposals': 'Быстро получайте предложения', 'hero.postFree': 'Разместите проект бесплатно',
     'trust.cities': 'Городов: {cities}, районов: {areas}', 'trust.nearby': 'Помощь совсем рядом', 'trust.verified': 'Специалисты с проверенной личностью', 'trust.documents': 'Документы проверены нашей командой', 'trust.pay': 'Оплата после выполнения', 'trust.release': 'Деньги переводятся после вашего подтверждения', 'trust.free': 'Регистрация бесплатна', 'trust.post': 'Размещение проектов бесплатно',
     'home.safe': 'Просто и безопасно', 'home.customer': '🧑‍💼 Для заказчиков', 'home.freelancer': '🛠️ Для фрилансеров',
@@ -182,7 +269,7 @@ const EN = {
   'common.viewall': 'View all', 'common.send': 'Send', 'common.follow': 'Follow', 'common.following': 'Following', 'common.message': 'Message', 'common.order': 'Order',
   'language.label': 'Language', 'language.select': 'Select language', 'language.en': 'English', 'language.et': 'Estonian', 'language.ru': 'Russian',
   'hero.search': 'Search', 'hero.allCities': 'All cities', 'hero.searchIn': 'Search in', 'hero.popular': 'Popular:', 'hero.hire': 'Hire a freelancer', 'hero.earn': 'Start earning →',
-  'hero.local': 'Local professionals in {count} Estonian cities', 'hero.near': 'Professionals near you', 'hero.searchArea': 'Search by city and area',
+  'hero.local': 'Local professionals across Estonia', 'hero.near': 'Professionals near you', 'hero.searchArea': 'Search by city and area',
   'hero.verified': 'Verified freelancers', 'hero.idChecked': 'ID checked by our team', 'hero.proposals': 'Get proposals fast', 'hero.postFree': 'Post a project for free',
   'trust.cities': '{cities} cities, {areas} areas', 'trust.nearby': 'Find help right around the corner', 'trust.verified': 'ID-verified professionals', 'trust.documents': 'Documents checked by our team', 'trust.pay': "Pay when it's done", 'trust.release': 'Released after you approve the work', 'trust.free': 'Free to join', 'trust.post': 'Post projects at no cost',
   'home.safe': 'Simple & safe', 'home.customer': '🧑‍💼 For customers', 'home.freelancer': '🛠️ For freelancers',
@@ -205,19 +292,27 @@ const EN = {
   'auth.nextSteps': 'Next you’ll set your prices, the hours you work and, for some services, upload an ID for verification.', 'auth.pwPh': 'At least 8 characters', 'auth.terms': 'I agree to the {terms} and have read the {privacy}', 'auth.create': 'Create account',
   'auth.welcomeBackName': 'Welcome back, {name}!', 'auth.createdWork': 'Account created! Now set up your service profile.', 'auth.createdHire': 'Account created! Post your first project.', 'auth.createdGoogle': 'Account created with Google! Add your city and area so people nearby can find you.',
   'auth.googleDisabled': 'Sign-in with Google is not available right now.', 'auth.googleState': 'Your Google sign-in expired. Please try again.', 'auth.googleCancelled': 'Google sign-in was cancelled.', 'auth.googleUnverified': 'Your Google email address is not verified, so we can’t use it to sign you in.', 'auth.googleFailed': 'Google sign-in failed. Please try again.',
-  'loc.city': 'City', 'loc.area': 'Area', 'loc.selectCity': 'Select city', 'loc.selectArea': 'Select area', 'loc.allAreas': 'All areas',
+  'loc.city': 'City', 'loc.area': 'Area', 'loc.selectCity': 'Select city', 'loc.selectArea': 'Select area', 'loc.allAreas': 'All areas', ...EN_PLACES,
 };
+Object.assign(I18N, I18N_INDIA, I18N_WORLD, I18N_ASIA);
+Object.assign(I18N.et, ET_PLACES); Object.assign(I18N.ru, RU_PLACES);
 let lang = 'en';
-const t = k => (I18N[lang] && I18N[lang][k]) || EN[k] || k;
-const numberLocale = () => ({ et: 'et-EE', ru: 'ru-RU' })[lang] || 'en';
-
-function detectLang() {
-  try { const saved = localStorage.getItem(LANG_KEY); if (saved && LANGS[saved]) return [saved, 'saved']; } catch (e) {}
-  for (const l of (navigator.languages || [navigator.language || 'en'])) {
-    const code = l.slice(0, 2).toLowerCase();
-    if (LANGS[code]) return [code, 'browser'];
-  }
-  return ['en', 'default'];
+// English says “state”, “province”, … as the country does.
+const regionName = () => COUNTRIES[site].region;
+const regionWord = () => (lang === 'en' ? regionName().charAt(0).toUpperCase() + regionName().slice(1) : t('loc.state'));
+const t = k => ((I18N[lang] && I18N[lang][k]) || EN[k] || k).replace('{region}', regionName());
+const numberLocale = () => (abroad() ? localeFor(lang, site) : ({ et: 'et-EE', ru: 'ru-RU' })[lang] || 'en');
+const savedLang = () => { try { return localStorage.getItem(LANG_KEY); } catch (e) { return null; } };
+// Languages offered: the region's own first, then the country's.
+const currentRegion = () => { const { name, args } = parseHash(); return (countryRoute(name) && regionBySlug(args[0])) || (me() && regionBySlug(me().state)) || null; };
+const siteLangs = () => (abroad() ? langsFor(site, currentRegion()) : ['en', 'et', 'ru']);
+// The visitor's own choice first, then the language saved in the account, the state's, the browser's.
+function chooseLang() {
+  const allowed = siteLangs(), u = db && me(), s = abroad() && currentRegion();
+  const browser = (navigator.languages || [navigator.language || 'en']).map(l => l.split('-')[0].toLowerCase());
+  lang = [savedLang(), u && u.lang, s && s.langs && s.langs[0], ...(abroad() && !isIN() ? [...browser, allowed[0]] : browser), 'en'].find(l => l && allowed.includes(l));
+  document.documentElement.lang = lang; document.documentElement.dir = RTL.includes(lang) ? 'rtl' : 'ltr';
+  document.documentElement.classList.toggle('long-nav', abroad() && !['en', 'hi', 'mr', 'gu', 'pa', 'bn', 'ur', 'zh', 'ko'].includes(lang)); // longer menu words don't fit in one row
 }
 
 function flagSvg(code) {
@@ -229,12 +324,13 @@ function flagSvg(code) {
 function languagePicker() {
   return `<div class="language-picker" id="language-picker">
     <button class="language-toggle" type="button" data-action="toggle-language" aria-label="${t('language.select')}" aria-haspopup="true" aria-expanded="false">
-      ${flagSvg(lang)}<span>${lang.toUpperCase()}</span><span class="language-chevron" aria-hidden="true">⌄</span>
+      ${abroad() ? `<b class="lang-native">${esc(LANGS[lang])}</b>` : `${flagSvg(lang)}<span>${lang.toUpperCase()}</span>`}<span class="language-chevron" aria-hidden="true">⌄</span>
     </button>
     <div class="language-menu" role="group" aria-label="${t('language.select')}">
-      ${Object.entries(LANGS).map(([code, name]) => `<button class="language-option ${code === lang ? 'active' : ''}" type="button" data-action="set-language" data-lang="${code}" aria-pressed="${code === lang}">
-        ${flagSvg(code)}<span>${t(`language.${code}`) || name}</span>${code === lang ? '<span class="language-check" aria-hidden="true">✓</span>' : ''}
+      ${siteLangs().map(code => [code, LANGS[code]]).map(([code, name]) => `<button class="language-option ${code === lang ? 'active' : ''}" type="button" data-action="set-language" data-lang="${code}" aria-pressed="${code === lang}">
+        ${abroad() ? `<span>${esc(name)}</span>${code === 'en' ? '' : `<small class="muted">${esc(LANG_NAMES[code][1])}</small>`}` : `${flagSvg(code)}<span>${t(`language.${code}`) || name}</span>`}${code === lang ? '<span class="language-check" aria-hidden="true">✓</span>' : ''}
       </button>`).join('')}
+      ${ON.length > 1 && (!me() || me().role === 'admin') ? `<hr class="menu-line"><a class="language-option" href="#/countries">🌍 <span>${esc(COUNTRIES[site].native)}</span><span class="language-check" aria-hidden="true">›</span></a>` : ''}
     </div>
   </div>`;
 }
@@ -323,7 +419,7 @@ window.worklayConsent = { get: readConsent, open: () => openCookieSettings() };
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = p => p + Math.random().toString(36).slice(2, 9);
-const money = n => '€' + Number(n).toLocaleString(numberLocale(), { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+const money = n => (viewCountry === 'EE' ? '€' + Number(n).toLocaleString(abroad() ? 'en' : numberLocale(), { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 }) : formatMoney(n, viewCountry, lang));
 const now = () => new Date().toISOString();
 const daysAgo = d => new Date(Date.now() - d * 864e5).toISOString();
 function ago(iso) {
@@ -351,7 +447,7 @@ async function api(route, data) {
 }
 async function refresh() {
   db = await api('bootstrap');
-  if (db.config) { CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments;
+  if (db.config) { ON = db.config.countries || ['EE']; VISITOR = db.config.visitorCountry || 'EE'; CITIES = db.config.cities; PLATFORM_FEE = db.config.fee; MIN_PAYOUT = db.config.minPayout; PAYOUT_METHODS = db.config.payoutMethods; GOOGLE_AUTH = !!db.config.googleAuth; CARD_PAYMENTS = !!db.config.cardPayments;
     if (db.config.categories) CATEGORIES = db.config.categories.map(c => ({ ...c, ico: c.icon }));
     if (db.config.slotMinutes) SLOT_MINUTES = db.config.slotMinutes; CATEGORY_ICONS = db.config.categoryIcons || CATEGORY_ICONS; TERMS_VERSION = db.config.termsVersion || ''; APPROVAL_DAYS = db.config.approvalDays || APPROVAL_DAYS; PHOTO_UPLOADS = !!db.config.photoUploads; MAX_PHOTO_MB = db.config.maxPhotoMb || 3; }
 }
@@ -507,13 +603,35 @@ function handleGoogleReturn() {
   history.replaceState(null, '', '/' + [name, ...args].join('/') + (qs ? '?' + qs : ''));
 }
 const pwField = (name, auto, extra = '') => `<div class="pw-wrap"><input name="${name}" type="password" required autocomplete="${auto}" ${extra}><button type="button" class="pw-toggle" data-action="toggle-pw">${t('auth.show')}</button></div>`;
+/* Country first: people choose their country before they sign up, and once when they first arrive. */
+const CHOOSE = { en: 'Choose your country', et: 'Vali oma riik', ru: 'Выберите страну' };
+const needCountry = () => ON.length > 1 && !me() && !savedSite();
+const languageSelect = (id, code, chosen) => `<select id="${id}" aria-label="${t('language.select')}">${langsFor(code).map(l => `<option value="${l}" lang="${l}" ${l === chosen ? 'selected' : ''}>${esc(LANGS[l])}${l === 'en' ? '' : ` (${esc(LANG_NAMES[l][1])})`}</option>`).join('')}</select>`;
+function setLang(l) { try { localStorage.setItem(LANG_KEY, l); } catch (e) {} lang = l; }
+const countrySelect = (id, chosen) => `<select id="${id}" aria-label="${CHOOSE[lang] || CHOOSE.en}"><option value="">—</option>${ON.map(c => COUNTRIES[c]).sort((a, b) => a.name.localeCompare(b.name)).map(c => `<option value="${c.code}" ${c.code === chosen ? 'selected' : ''}>${esc(c.name)}${c.native === c.name ? '' : ` (${esc(c.native)})`}</option>`).join('')}</select>`;
+async function switchCountry(code) {
+  saveSite(code);
+  if (!geoReady(code)) await loadGeo(code).catch(() => { GEO[code] = { regions: [] }; });
+  go(code === 'EE' ? '#/' : '#/' + COUNTRIES[code].slug);
+}
+function openCountryChooser() {
+  modal(`<div style="text-align:center"><div style="font-size:2.4rem">🌍</div><h2 style="margin:6px 0">${CHOOSE[lang] || CHOOSE.en}</h2><p class="muted">You’ll see people and work in that country.</p></div>
+    <form id="country-form"><div class="field">${countrySelect('first-country', site)}</div><div class="field"><label>${t('language.select')}</label><span id="first-lang-box">${languageSelect('first-lang', site, lang)}</span></div><button class="btn btn-join btn-block">OK</button></form>`, m => {
+    // The languages of the chosen country: its own ones and English.
+    $('#first-country', m).onchange = e => { const c = e.target.value || 'EE'; $('#first-lang-box', m).innerHTML = languageSelect('first-lang', c, COUNTRIES[c].langs[0]); };
+    $('#country-form', m).onsubmit = e => { e.preventDefault(); const c = $('#first-country', m).value; if (!c) return; setLang($('#first-lang', m).value); closeModal(); switchCountry(c).then(renderCookieBanner); };
+  });
+}
+// Country and language, in plain sight at the top of the home page and the country pages.
+const countryBar = () => (ON.length < 2 || (me() && me().role !== 'admin') ? '' : `<div class="country-bar"><label>🌍 <span>${CHOOSE[lang] || CHOOSE.en}</span>${countrySelect('home-country', site)}</label><label>🗣️ <span>${t('language.select')}</span>${languageSelect('home-lang', site, lang)}</label></div>`);
 const authButtons = () => `<button class="btn btn-login" data-action="login">${ICON_USER}<span>${t('cta.login')}</span></button> <button class="btn btn-join" data-action="signup">${t('cta.signup')}${ICON_ARROW}</button>`;
 function openAuth(mode = 'login', intent = 'hire') {
   const err = '<p class="auth-err" role="alert" style="color:#d92d50;min-height:1.2em;margin:0 0 8px;font-size:.9rem"></p>';
   modal(`<div style="text-align:center;margin-bottom:18px"><svg viewBox="0 0 32 32" width="44" height="44" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#3858FF"/><path d="M7 10l4 13 5-9 5 9 4-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <h2 style="margin:8px 0 0">${mode === 'login' ? t('auth.welcomeBack') : t('auth.join')}</h2><p class="muted" style="margin:4px 0 0">${mode === 'login' ? t('auth.loginSub') : t('auth.joinSub')}</p></div>
     <div class="tabs" style="width:100%;margin-bottom:18px"><button style="flex:1" class="${mode === 'login' ? 'active' : ''}" data-action="auth-tab" data-mode="login">${t('cta.login')}</button><button style="flex:1" class="${mode === 'signup' ? 'active' : ''}" data-action="auth-tab" data-mode="signup">${t('cta.signup')}</button></div>
-    ${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? t('auth.googleContinue') : t('auth.googleSignup')}</button>
+    ${mode === 'signup' && ON.length > 1 ? `<div class="field"><label>🌍 ${CHOOSE[lang] || CHOOSE.en}</label>${countrySelect('auth-country', savedSite() || '')}</div>${needCountry() ? '' : `<div class="field"><label>${t('language.select')}</label>${languageSelect('auth-lang', site, lang)}</div>`}` : ''}
+    ${mode === 'signup' && needCountry() ? '' : `${GOOGLE_AUTH ? `<button type="button" class="btn btn-google btn-block" data-action="google-auth">${GOOGLE_G}${mode === 'login' ? t('auth.googleContinue') : t('auth.googleSignup')}</button>
       <p class="small muted" style="text-align:center;margin:8px 0 0">${t('auth.googleTerms').replace('{terms}', `<a href="#/terms" data-action="close-modal">${t('legal.terms')}</a>`).replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</p>
       <div class="auth-divider"><span>${t('auth.or')}</span></div>` : ''}
     ${mode === 'login' ? `<form id="login-form">
@@ -534,7 +652,12 @@ function openAuth(mode = 'login', intent = 'hire') {
       <div class="field"><label>${t('auth.password')}</label>${pwField('password', 'new-password', `minlength="8" placeholder="${esc(t('auth.pwPh'))}"`)}</div>
       <label class="filter-opt small"><input type="checkbox" name="terms" required> ${t('auth.terms').replace('{terms}', `<a href="#/terms" data-action="close-modal">${t('legal.terms')}</a>`).replace('{privacy}', `<a href="#/privacy" data-action="close-modal">${t('auth.privacyLink')}</a>`)}</label>
       ${err}<button class="btn btn-join btn-block">${t('auth.create')}${ICON_ARROW}</button>
-      <p class="small muted" style="text-align:center">${t('auth.haveAccount')} <a href="#" data-action="auth-tab" data-mode="login">${t('cta.login')}</a></p></form>`}`, m => {
+      <p class="small muted" style="text-align:center">${t('auth.haveAccount')} <a href="#" data-action="auth-tab" data-mode="login">${t('cta.login')}</a></p></form>`}`}`, m => {
+    loadFormPlaces();
+    const pick = $('#auth-country', m);
+    const intentNow = () => (m.querySelector('[name="intent"]:checked') || {}).value || intent, tongue = $('#auth-lang', m);
+    if (tongue) tongue.onchange = () => { setLang(tongue.value); render(); openAuth('signup', intentNow()); };
+    if (pick) pick.onchange = () => pick.value && switchCountry(pick.value).then(() => openAuth('signup', intentNow()));
     const errEl = $('.auth-err', m);
     const lf = $('#login-form', m), sf = $('#signup-form', m);
     if (lf) lf.onsubmit = e => {
@@ -545,7 +668,7 @@ function openAuth(mode = 'login', intent = 'hire') {
     if (sf) sf.onsubmit = e => {
       e.preventDefault(); const f = new FormData(sf), work = f.get('intent') === 'work';
       const title = (f.get('title') || '').trim() || (f.get('category') ? catById(f.get('category')).name + ' freelancer' : 'Freelancer');
-      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
+      act('auth/register', { intent: f.get('intent'), name: f.get('name'), email: f.get('email'), password: f.get('password'), country: site, lang, state: f.get('state') || '', city: f.get('city'), area: f.get('area'), category: f.get('category'), title, terms: !!f.get('terms') }, null, { errEl, after: () => {
         closeModal(); OB = null; go(work ? '#/onboarding' : '#/post-project'); render();
         toast(work ? t('auth.createdWork') : t('auth.createdHire')); } });
     };
@@ -555,17 +678,17 @@ function openAuth(mode = 'login', intent = 'hire') {
 // Asks a logged-in user to accept the current Terms of Service.
 function openTerms() {
   modal(`<h2>Our Terms of Service were updated</h2>
-    <ul class="muted"><li>The client pays up front and Worklay holds the money until the work is done.</li><li>When the client approves the work, the freelancer is paid automatically.</li><li>If the client doesn’t approve finished work or report a problem within ${APPROVAL_DAYS} days, the freelancer is paid automatically.</li><li>If the client reports a problem with proof and Worklay accepts it, the client is refunded. Worklay decides within ${APPROVAL_DAYS} days.</li><li>Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs, taken from the freelancer’s share.</li></ul>
+    <ul class="muted">${abroad() ? `<li>These are the Terms for ${esc(COUNTRIES[site].name)}.</li><li>${t('in.nopay')}</li>` : `<li>The client pays up front and Worklay holds the money until the work is done.</li><li>When the client approves the work, the freelancer is paid automatically.</li><li>If the client doesn’t approve finished work or report a problem within ${APPROVAL_DAYS} days, the freelancer is paid automatically.</li><li>If the client reports a problem with proof and Worklay accepts it, the client is refunded. Worklay decides within ${APPROVAL_DAYS} days.</li><li>Worklay keeps ${Math.round(PLATFORM_FEE * 100)}% of completed jobs, taken from the freelancer’s share.</li>`}</ul>
     <p><a href="/terms" target="_blank" rel="noopener">Read the full ${t('legal.terms')}</a></p>
     <button class="btn btn-primary btn-block" data-action="terms-accept">I agree to the Terms of Service</button>`);
 }
 function openProposal(pid) {
   const p = project(pid);
   modal(`<h2>Submit a proposal</h2><p class="muted">${esc(p.title)}<br>Budget ${money(p.budgetMin)}–${money(p.budgetMax)}</p>
-    <form id="pf"><div class="row"><div class="field"><label>Your price (€)</label><input name="amount" type="number" min="5" step="1" required value="${p.budgetMin}"></div>
+    <form id="pf"><div class="row"><div class="field"><label>Your price (${currency()})</label><input name="amount" type="number" min="5" step="1" required value="${p.budgetMin}"></div>
     <div class="field"><label>Delivery (days)</label><input name="days" type="number" min="1" required value="7"></div></div>
     <div class="field"><label>Cover letter</label><textarea name="cover" required minlength="20" placeholder="Explain why you're a great fit and how you'll approach the work."></textarea></div>
-    <p class="small muted">The client is notified right away. If you're awarded, Worklay keeps a ${PLATFORM_FEE * 100}% platform fee from the final amount.</p>
+    <p class="small muted">The client is notified right away. ${abroad() ? t('in.nopay') : `If you're awarded, Worklay keeps a ${PLATFORM_FEE * 100}% platform fee from the final amount.`}</p>
     <button class="btn btn-primary btn-block">Send proposal</button></form>`, m => {
     $('#pf', m).onsubmit = e => {
       e.preventDefault(); const f = new FormData(e.target);
@@ -649,6 +772,7 @@ const V = {};
 
 /* Earnings tab when payments go through Stripe Connect. */
 function stripeEarnings(u) {
+  if (!canPay(u)) return `<h1>Earnings & payouts</h1><div class="card card-pad"><p class="notice" style="margin:0">${t('in.nopay')}</p></div>`;
   const s = u.payouts || {}, mine = (db.payments || []).filter(p => p.sellerId === u.id);
   const label = p => p.kind === 'booking' ? `Booking ${fmtDate((db.bookings.find(b => b.id === p.bookingId) || {}).date || localNow().date)}` : p.kind === 'order' ? (service((db.orders.find(o => o.id === p.orderId) || {}).serviceId) || {}).title || 'Service order' : (project(p.projectId) || {}).title || 'Project';
   const setup = !s.connected
@@ -682,20 +806,69 @@ function tickClock() {
   setTimeout(tickClock, 1000 - (Date.now() % 1000)); // stay aligned to the start of each second
 }
 
+// Each country has its own Terms: /terms shows those of the visitor's country, /terms?country=de another's.
+V.terms = (_, q) => {
+  const asked = String(q.country || '').toUpperCase(), code = ON.includes(asked) ? asked : site;
+  const others = ON.length > 1 ? `<div class="prose" style="padding-top:0"><h2>Terms of other countries</h2><div class="city-chips">${ON.filter(c => c !== code).map(c => `<a class="city-chip" href="#/terms?country=${c.toLowerCase()}">${esc(COUNTRIES[c].native)}</a>`).join('')}</div></div>` : '';
+  return (code === 'EE' ? termsPage(lang, { fee: PLATFORM_FEE, days: APPROVAL_DAYS }) : termsWorld(code)) + others;
+};
+V.countries = () => `<div class="page-head"><div class="container"><h1>🌍 Worklay</h1><p>Choose your country</p></div></div><div class="container" style="padding-top:20px">
+  ${[...new Set(ON.map(c => COUNTRIES[c].continent))].map(k => `<h2 style="margin-top:24px">${k}</h2><div class="state-grid">${ON.map(c => COUNTRIES[c]).filter(c => c.continent === k).map(c => `<button type="button" class="state-card" data-action="set-country" data-country="${c.code}"><b>${esc(c.native)}</b><span>${esc(c.name)} · ${esc(currencySign(c.code))}</span></button>`).join('')}</div>`).join('')}</div>`;
+// Cities of a region as cards, the biggest first, with some of their areas.
+const placeLink = (state, city, area) => '#/freelancers?' + new URLSearchParams({ state, city, ...(area ? { area } : {}) });
+const areaChip = (state, city, a) => `<a class="city-chip" href="${placeLink(state, city, a)}">${esc(a)}</a>`;
+const cityCard = (state, city, areas) => `<div class="card card-pad place"><a href="${placeLink(state, city)}"><b>📍 ${esc(city)}</b></a>${areas.length ? `<div class="city-chips">${areas.slice(0, 12).map(a => areaChip(state, city, a)).join('')}${areas.length > 12 ? `<button type="button" class="city-chip more" data-action="more-areas" data-state="${esc(state)}" data-city="${esc(city)}">+${areas.length - 12}</button>` : ''}</div>` : ''}</div>`;
+function placeCards(state, max) {
+  const all = Object.entries(citiesOf(state));
+  return `<div class="place-grid">${all.slice(0, max).map(([c, a]) => cityCard(state, c, a)).join('')}</div>${all.length > max ? `<p style="margin-top:14px"><button type="button" class="btn btn-outline" data-action="all-cities" data-state="${esc(state)}">${t('common.viewall')} (${all.length})</button></p>` : ''}`;
+}
+// Search inside a region: cities and areas, whatever is typed.
+function searchPlaces(state, text) {
+  const all = Object.entries(citiesOf(state)), cities = bestMatches(all.map(([c]) => c), text, 24);
+  const q = fold(text), areas = []; for (const [c, list] of all) { for (const a of list) if (fold(a).includes(q)) { areas.push([c, a]); if (areas.length >= 60) break; } if (areas.length >= 60) break; }
+  return `<div class="place-grid">${cities.map(c => cityCard(state, c, citiesOf(state)[c])).join('')}</div>${areas.length ? `<h3 style="margin-top:20px">${t('loc.area')}</h3><div class="city-chips">${areas.map(([c, a]) => `<a class="city-chip" href="${placeLink(state, c, a)}">${esc(a)} <span class="muted">${esc(c)}</span></a>`).join('')}</div>` : ''}${cities.length || areas.length ? '' : `<p class="muted">—</p>`}`;
+}
+V.country = code => ([slug]) => {
+  const c = COUNTRIES[code]; if (code === 'EE' || !ON.includes(code)) return V.notFound();
+  if (site !== code) return `<div class="container">${empty('📍', `Your account is in ${esc(COUNTRIES[site].name)}.`, '<a class="btn btn-primary" href="#/">Go to homepage</a>')}</div>`;
+  const s = slug ? regionBySlug(slug) : null; if (slug && !s) return V.notFound();
+  const u = me(), list = db.users.filter(x => x.isFreelancer && here(x) && (!s || x.state === s.slug) && (!u || x.id !== u.id)).sort(byNearMe(x => x)).slice(0, 8);
+  const find = q => '#/freelancers?' + new URLSearchParams(q);
+  const join = u ? '' : `<button class="btn btn-join" data-action="signup" data-intent="work">${t('in.join')}${ICON_ARROW}</button>`;
+  const own = r => (r.langs && r.langs[0] !== c.langs[0] ? r.langs[0] : code === 'IN' ? r.langs[0] : '');
+  const group = (items, title) => (items.length ? `<h2 style="margin-top:34px">${title}</h2><div class="state-grid">${items.map(x => `<a class="state-card" href="#/${c.slug}/${x.slug}"><b>${esc(x.name)}</b>${own(x) ? `<span lang="${own(x)}">${esc(LANGS[own(x)])}</span>` : ''}</a>`).join('')}</div>` : '');
+  return `<section class="hero india-hero"><div class="container hero-inner"><div>
+      ${s ? `<a class="pill-badge" href="#/${c.slug}">← ${esc(c.native)}</a>` : `<div class="hero-badges"><span class="pill-badge">📍 ${esc(c.native)}</span></div>`}
+      ${countryBar()}
+      <h1>${s ? esc(s.name) : t('in.title')}</h1><p class="lead">${t('in.lead')}</p>
+      <div class="hero-ctas"><a class="btn btn-white btn-lg" href="${s ? find({ state: s.slug }) : '#/freelancers'}">${t('nav.freelancers')}</a><a class="btn btn-glass btn-lg" href="#/post-project">${t('cta.post')}</a></div></div></div></section>
+  <div class="container" style="padding-top:36px"><p class="notice">${t('in.nopay')}</p>
+  <h2>${t('in.languages')}</h2><div class="city-chips">${(s && s.langs ? s.langs : langsFor(code, s)).map(l => `<button type="button" class="city-chip ${l === lang ? 'on' : ''}" data-action="set-language" data-lang="${l}" lang="${l}">${esc(LANGS[l])}</button>`).join('')}</div>
+  ${s ? `<h2 style="margin-top:34px">${t('in.cities')} <span class="muted small">${s.n}</span></h2>${s.n > 12 ? `<input type="search" id="place-search" data-state="${s.slug}" placeholder="${esc(t('cta.search'))}…" aria-label="${esc(t('cta.search'))}" class="place-search">` : ''}<div id="place-results">${placeCards(s.slug, 48)}</div>`
+    : group(regions().filter(x => !x.group), t('in.states')) + [...new Set(regions().map(x => x.group).filter(Boolean))].map(g => group(regions().filter(x => x.group === g), esc(g))).join('')}
+  <h2 style="margin-top:34px">${t('home.cats')}</h2><div class="cat-grid">${approvedCats().map(x => `<a class="cat" href="${find({ ...(s ? { state: s.slug } : {}), cat: x.id })}"><span class="ico" style="background:${x.color}">${x.ico}</span><div><b>${esc(catName(x))}</b></div></a>`).join('')}</div>
+  <div class="section-head" style="margin-top:34px"><h2 style="margin:0">${t('in.freelancers')}</h2>${join}</div>
+  ${list.length ? `<div class="grid">${list.map(freelancerCard).join('')}</div>` : `<div class="card card-pad">${empty('🙋', t('in.nobody'))}</div>`}
+  <p class="small" style="margin-top:24px"><a href="#/terms?country=${code.toLowerCase()}">${t('legal.terms')}: ${esc(c.native)}</a></p>
+  <p class="small muted">Place names: <a href="https://www.geonames.org" target="_blank" rel="noopener">GeoNames</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>)${(GEO[code] || {}).osm ? ' and © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>' : ''}, selected and changed.</p></div>`;
+};
+
 V.home = () => {
-  const latest = [...db.projects].filter(p => p.status === 'open').sort((a, b) => b.created.localeCompare(a.created)).slice(0, 3);
-  const popular = [...db.services].sort((a, b) => serviceRating(b.id).n - serviceRating(a.id).n).slice(0, 4);
+  if (abroad()) return V.country(site)([]);
+  const latest = [...db.projects].filter(p => here(p) && p.status === 'open').sort((a, b) => b.created.localeCompare(a.created)).slice(0, 3);
+  const popular = db.services.filter(s => here(user(s.sellerId))).sort((a, b) => serviceRating(b.id).n - serviceRating(a.id).n).slice(0, 4);
   const u = me();
-  const nearby = db.users.filter(x => x.isFreelancer && (!u || x.id !== u.id)).sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating).slice(0, 4);
+  const nearby = db.users.filter(x => x.isFreelancer && here(x) && (!u || x.id !== u.id)).sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating).slice(0, 4);
   const nearHead = u && u.city ? `${t('home.nearbyLocation')} ${esc(u.city)}` : t('home.nearbyHead');
-  const areaCount = Object.values(CITIES).reduce((a, l) => a + l.length, 0);
-  const catCount = id => db.users.filter(x => x.isFreelancer && x.category === id).length + db.services.filter(s => s.category === id).length;
+  const areaCount = Object.values(CITIES).reduce((a, l) => a + (l[0] === 'Kogu linn' ? 0 : l.length), 0);
+  const catCount = id => db.users.filter(x => x.isFreelancer && here(x) && x.category === id).length + db.services.filter(s => s.category === id && here(user(s.sellerId))).length;
   const invite = (ico, title, text, btn) => `<div class="invite"><span class="ico">${ico}</span><div><h3>${title}</h3><p>${text}</p></div>${btn}</div>`;
   const joinBtn = u ? `<a class="btn btn-primary" href="#/dashboard/settings">${t('home.setupFreelancer')}</a>` : `<button class="btn btn-primary" data-action="signup" data-intent="work">${t('home.joinFreelancer')}</button>`;
   return `
   <section class="hero"><div class="container hero-inner">
     <div>
-      <div class="hero-badges"><span class="pill-badge">📍 ${t('hero.local').replace('{count}', Object.keys(CITIES).length)}</span>${liveClock()}</div>
+      <div class="hero-badges"><span class="pill-badge">📍 ${t('hero.local')}</span>${liveClock()}</div>
+      ${countryBar()}
       <h1>${lang === 'en' || lang === 'ru' ? t('hero.titleHtml') : t('hero.title')}</h1>
       <p class="lead">${t('hero.lead')}</p>
       <form class="search-bar" id="hero-search"><input name="q" placeholder="${esc(t('hero.ph'))}" aria-label="${t('hero.search')}"><select name="city" aria-label="${t('hero.searchArea')}"><option value="">📍 ${t('hero.allCities')}</option>${Object.keys(CITIES).map(c => `<option ${u && u.city === c ? 'selected' : ''}>${c}</option>`).join('')}</select><select name="type" aria-label="${t('hero.searchIn')}"><option value="freelancers">${t('nav.freelancers')}</option><option value="services">${t('nav.services')}</option><option value="projects">${t('nav.projects')}</option></select><button class="btn btn-primary">${t('cta.search')}</button></form>
@@ -743,7 +916,7 @@ V.home = () => {
   <section class="section" style="padding-top:0"><div class="container">
     <div class="section-head"><div><h2>${nearHead}</h2><p>${t('home.pickCity')}</p></div>${nearby.length ? `<a href="#/freelancers${u && u.city ? '?city=' + encodeURIComponent(u.city) : ''}">${t('common.viewall')} →</a>` : ''}</div>
     ${nearby.length ? `<div class="grid">${nearby.map(freelancerCard).join('')}</div>` : invite('🙋', t('home.firstFreelancer'), t('home.profileNearby'), joinBtn)}
-    <div class="city-chips">${Object.keys(CITIES).map(c => `<a class="city-chip" href="#/freelancers?city=${encodeURIComponent(c)}">📍 ${c}</a>`).join('')}</div>
+    <div class="city-chips">${Object.keys(CITIES).slice(0, 15).map(c => `<a class="city-chip" href="#/freelancers?city=${encodeURIComponent(c)}">📍 ${c}</a>`).join('')}</div>
   </div></section>
 
   <section class="section" style="padding-top:0"><div class="container">
@@ -765,35 +938,40 @@ function filterSidebar(kind, q) {
   const u = me();
   return `<aside class="filters"><form id="filters">
     <label>Search</label><input name="q" value="${esc(q.q || '')}" placeholder="Keywords">
-    <h4>📍 Location</h4>${locationFields(q.city || '', q.area || '', { any: true })}
+    <h4>📍 Location</h4>${locationFields(q.city || '', q.area || '', { any: true, state: q.state || '' })}
     ${u && u.city ? `<button type="button" class="btn btn-outline btn-sm btn-block" data-action="near-me">Near me (${esc(locStr(u))})</button>` : ''}
     ${kind === 'projects' ? `<label class="filter-opt"><input type="checkbox" name="remote" value="1" ${q.remote ? 'checked' : ''}> Include remote projects</label>` : ''}
-    <h4>Category</h4>${CATEGORIES.filter(c => c.status !== 'NEW' || cats.includes(c.id) || db.users.some(x => x.isFreelancer && x.category === c.id)).map(c => `<div class="cat-filter"><label class="filter-opt"><input type="checkbox" name="cat" value="${c.id}" ${cats.includes(c.id) ? 'checked' : ''}> ${c.ico} ${esc(catName(c))}</label>
-      ${kind === 'freelancers' && c.subcategories.length ? `<div class="sub-filter">${c.subcategories.map(x => `<label class="filter-opt small"><input type="checkbox" name="sub" value="${x.id}" ${subs.includes(x.id) ? 'checked' : ''}> ${esc(catName(x))}</label>`).join('')}</div>` : ''}</div>`).join('')}
+    <h4>Category</h4>${CATEGORIES.filter(c => c.status !== 'NEW' || cats.includes(c.id) || db.users.some(x => x.isFreelancer && here(x) && x.category === c.id)).map(c => `<div class="cat-filter"><label class="filter-opt"><input type="checkbox" name="cat" value="${c.id}" ${cats.includes(c.id) ? 'checked' : ''}> ${c.ico} ${esc(catName(c))}</label>
+      ${kind === 'freelancers' && (c.subcategories.length || ownSubs(c.id).length) ? `<div class="sub-filter">${c.subcategories.map(x => `<label class="filter-opt small"><input type="checkbox" name="sub" value="${x.id}" ${subs.includes(x.id) ? 'checked' : ''}> ${esc(catName(x))}</label>`).join('')}${ownSubs(c.id).map(n => `<label class="filter-opt small"><input type="checkbox" name="own" data-cat="${c.id}" value="${esc(n)}" ${splitOwn(q).some(o => same(o, n)) ? 'checked' : ''}> ${esc(n)}</label>`).join('')}</div>` : ''}</div>`).join('')}
     ${kind === 'freelancers' ? `<h4>📚 Tutoring</h4>
-      <select name="subject"><option value="">Any subject</option>${[...new Set([...TUTOR_SUBJECTS, ...db.users.flatMap(x => x.tutorSubjects || [])])].map(x => `<option ${q.subject === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      <select name="level" style="margin-top:8px"><option value="">Any class / level</option>${[...new Set([...TUTOR_LEVELS, ...db.users.flatMap(x => x.tutorLevels || [])])].map(x => `<option ${q.level === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <select name="subject"><option value="">Any subject</option>${[...new Set([...tutorSubjects(), ...db.users.flatMap(x => x.tutorSubjects || [])])].map(x => `<option ${q.subject === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <select name="level" style="margin-top:8px"><option value="">Any class / level</option>${[...new Set([...tutorLevels(), ...db.users.flatMap(x => x.tutorLevels || [])])].map(x => `<option ${q.level === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
       <h4>🕒 Available</h4><select name="time"><option value="">Any time</option>${TIMES.map(([k, l, h]) => `<option value="${k}" ${q.time === k ? 'selected' : ''}>${l} (${h})</option>`).join('')}</select>
       <label class="filter-opt"><input type="checkbox" name="urgent" value="1" ${q.urgent ? 'checked' : ''}> ⚡ Takes same-day bookings</label>` : ''}
-    <h4>${kind === 'projects' ? 'Budget' : kind === 'freelancers' ? 'Price' : 'Starting price'} (€)</h4><div class="row"><input name="min" type="number" placeholder="Min" value="${esc(q.min || '')}"><input name="max" type="number" placeholder="Max" value="${esc(q.max || '')}"></div>
+    <h4>${kind === 'projects' ? 'Budget' : kind === 'freelancers' ? 'Price' : 'Starting price'} (${currency()})</h4><div class="row"><input name="min" type="number" placeholder="Min" value="${esc(q.min || '')}"><input name="max" type="number" placeholder="Max" value="${esc(q.max || '')}"></div>
     ${kind !== 'projects' ? `<h4>Seller</h4><label class="filter-opt"><input type="checkbox" name="verified" value="1" ${q.verified ? 'checked' : ''}> Verified only</label>` : `<h4>Status</h4><label class="filter-opt"><input type="checkbox" name="open" value="1" ${q.open ? 'checked' : ''}> Open for proposals</label>`}
     <button class="btn btn-primary btn-block" style="margin-top:14px">Apply filters</button>
     <a class="btn btn-ghost btn-block btn-sm" href="#/${kind}">Clear</a></form></aside>`;
 }
+// Subcategories created by freelancers of this country: shown as filters under their category.
+const ownSubs = catId => { const seen = new Map(); db.users.filter(x => x.isFreelancer && here(x) && x.category === catId).forEach(x => (x.customSubcategories || []).forEach(n => seen.has(n.toLowerCase()) || seen.set(n.toLowerCase(), n))); return [...seen.values()].sort((a, b) => a.localeCompare(b)); };
+const splitOwn = q => (q.own || '').split(',').filter(Boolean);
 const subById = id => CATEGORIES.flatMap(c => c.subcategories || []).find(x => x.id === id);
 // A subcategory only narrows its own category: picking "Nails" doesn't hide people from other chosen categories.
-function matchSubs(u, subs) {
-  const own = (catById(u.category).subcategories || []).map(x => x.id).filter(id => subs.includes(id));
-  return !own.length || own.some(id => u.subcategories.includes(id));
+function matchSubs(u, subs, own = []) {
+  const official = (catById(u.category).subcategories || []).map(x => x.id).filter(id => subs.includes(id)), mine = own.length ? ownSubs(u.category).filter(n => own.some(o => same(o, n))) : [];
+  return (!official.length && !mine.length) || official.some(id => u.subcategories.includes(id)) || mine.some(n => (u.customSubcategories || []).some(x => same(x, n)));
 }
 function activeFilters(kind, q) {
   const chips = [];
   if (q.q) chips.push(['q', '', `“${q.q}”`]);
+  if (q.state) chips.push(['state', '', '📍 ' + stateName(q.state)]);
   if (q.city) chips.push(['city', '', '📍 ' + (q.area ? q.area + ', ' : '') + q.city]);
   (q.cat || '').split(',').filter(Boolean).forEach(c => chips.push(['cat', c, catById(c).ico + ' ' + catName(catById(c))]));
   (q.sub || '').split(',').filter(Boolean).forEach(id => { const x = subById(id); if (x) chips.push(['sub', id, catName(x)]); });
-  if (q.min) chips.push(['min', '', 'From €' + q.min]);
-  if (q.max) chips.push(['max', '', 'Up to €' + q.max]);
+  splitOwn(q).forEach(n => chips.push(['own', n, n]));
+  if (q.min) chips.push(['min', '', 'From ' + money(q.min)]);
+  if (q.max) chips.push(['max', '', 'Up to ' + money(q.max)]);
   if (q.verified) chips.push(['verified', '', '✓ Verified only']);
   if (q.open) chips.push(['open', '', 'Open only']);
   if (q.subject) chips.push(['subject', '', '📚 ' + q.subject]);
@@ -808,12 +986,13 @@ function listToolbar(kind, q, count, noun, right = '') {
   return `<div class="toolbar"><div style="display:flex;gap:10px;align-items:center"><button class="btn btn-outline btn-sm filter-toggle" data-action="toggle-filters">⚙️ Filters</button><span class="muted"><b style="color:var(--ink)">${count}</b> ${noun}${count === 1 ? '' : 's'}${locHeading(q)}</span></div>${right}</div>${activeFilters(kind, q)}`;
 }
 const matchQ = (q, ...fields) => !q || fields.join(' ').toLowerCase().includes(q.toLowerCase());
-const matchLoc = (q, o) => (!q.city || o.city === q.city) && (!q.area || o.area === q.area);
+const same = (a, b) => a === b || foldName(a || '') === foldName(b || ''); // typed places may differ in case and accents
+const matchLoc = (q, o) => (!q.state || o.state === q.state) && (!q.city || same(o.city, q.city)) && (!q.area || same(o.area, q.area));
 // Freelancers also match every area they cover.
-const matchFreelancerLoc = (q, u) => (!q.city || u.city === q.city) && (!q.area || u.area === q.area || (u.serviceAreas || []).includes(q.area));
+const matchFreelancerLoc = (q, u) => (!q.state || u.state === q.state) && (!q.city || same(u.city, q.city)) && (!q.area || same(u.area, q.area) || (u.serviceAreas || []).some(a => same(a, q.area)));
 // Closest to the viewer first (same area, then same city)
 const byNearMe = getLoc => (a, b) => { const u = me(); return u ? proximity(u, getLoc(b)) - proximity(u, getLoc(a)) : 0; };
-const locHeading = q => q.city ? ` in ${esc(q.area ? q.area + ', ' + q.city : q.city)}` : '';
+const locHeading = q => { const where = [q.city && q.area, q.city, q.state && stateName(q.state)].filter(Boolean).join(', '); return where ? ` in ${esc(where)}` : ''; };
 
 function freelancerCard(u) {
   const st = userStats(u.id), svcs = db.services.filter(s => s.sellerId === u.id);
@@ -832,7 +1011,7 @@ function freelancerCard(u) {
 
 V.freelancers = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean), subs = (q.sub || '').split(',').filter(Boolean);
-  const list = db.users.filter(u => u.isFreelancer && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category)) && matchSubs(u, subs)
+  const list = db.users.filter(u => u.isFreelancer && here(u) && (!me() || u.id !== me().id) && matchFreelancerLoc(q, u) && (!cats.length || cats.includes(u.category)) && matchSubs(u, subs, splitOwn(q))
     && matchQ(q.q, u.name, u.title, u.specialty, u.bio, u.skills.join(' '), u.tutorSubjects.join(' '), specialisms(u).join(' '), catName(catById(u.category)), catById(u.category).name) && (!q.min || u.priceAmount >= +q.min) && (!q.max || u.priceAmount <= +q.max) && (!q.verified || u.verification.status === 'verified')
     && (!q.subject || u.tutorSubjects.includes(q.subject)) && (!q.level || u.tutorLevels.includes(q.level)) && (!q.time || worksDuring(u, q.time)) && (!q.urgent || u.availableForUrgent))
     .sort((a, b) => byNearMe(x => x)(a, b) || userStats(b.id).rating - userStats(a.id).rating);
@@ -845,7 +1024,7 @@ V.freelancers = (_, q) => {
 
 V.services = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean);
-  let list = db.services.filter(s => (!cats.length || cats.includes(s.category)) && matchQ(q.q, s.title, s.description, user(s.sellerId).name, user(s.sellerId).skills.join(' '))
+  let list = db.services.filter(s => here(user(s.sellerId)) && (!cats.length || cats.includes(s.category)) && matchQ(q.q, s.title, s.description, user(s.sellerId).name, user(s.sellerId).skills.join(' '))
     && (!q.min || s.packages[0].price >= +q.min) && (!q.max || s.packages[0].price <= +q.max) && (!q.verified || user(s.sellerId).verification.status === 'verified') && matchFreelancerLoc(q, user(s.sellerId)));
   const sort = q.sort || (me() && me().city ? 'near' : 'rating');
   if (sort === 'near') list.sort((a, b) => byNearMe(s => user(s.sellerId))(a, b) || serviceRating(b.id).avg - serviceRating(a.id).avg); else list.sort(sort === 'price' ? (a, b) => a.packages[0].price - b.packages[0].price : sort === 'new' ? (a, b) => b.created.localeCompare(a.created) : (a, b) => serviceRating(b.id).avg - serviceRating(a.id).avg);
@@ -858,7 +1037,7 @@ V.services = (_, q) => {
 
 V.projects = (_, q) => {
   const cats = (q.cat || '').split(',').filter(Boolean);
-  let list = db.projects.filter(p => (!cats.length || cats.includes(p.category)) && matchQ(q.q, p.title, p.description, p.skills.join(' '))
+  let list = db.projects.filter(p => here(p) && (!cats.length || cats.includes(p.category)) && matchQ(q.q, p.title, p.description, p.skills.join(' '))
     && (!q.min || p.budgetMax >= +q.min) && (!q.max || p.budgetMin <= +q.max) && (!q.open || p.status === 'open')
     && (matchLoc(q, p) || (q.remote && p.remote)));
   list.sort((a, b) => byNearMe(x => x)(a, b) || b.created.localeCompare(a.created));
@@ -887,7 +1066,7 @@ V.service = ([id], q) => {
     <tr><td><b>Revisions</b></td>${s.packages.map(p => `<td>${p.revisions}</td>`).join('')}</tr>
     ${FEATURE_NAMES.map((f, i) => `<tr><td><b>${f}</b></td>${s.packages.map(p => `<td>${feat(p.feats[i])}</td>`).join('')}</tr>`).join('')}
     <tr><td><b>Price</b></td>${s.packages.map(p => `<td>${money(p.price)}</td>`).join('')}</tr>
-    <tr><td><b>Total</b></td>${s.packages.map((p, i) => `<td><button class="btn btn-sm btn-outline" data-action="order" data-id="${s.id}" data-idx="${i}" ${own ? 'disabled' : ''}>${t('common.order')} ${money(p.price)}</button></td>`).join('')}</tr></tbody></table></div>
+    <tr><td><b>Total</b></td>${s.packages.map((p, i) => `<td><button class="btn btn-sm btn-outline" data-action="order" data-id="${s.id}" data-idx="${i}" ${own || !canPay(u) ? 'disabled' : ''}>${t('common.order')} ${money(p.price)}</button></td>`).join('')}</tr></tbody></table></div>
     <h2 style="margin-top:30px">About the seller</h2>
     <div class="profile-card">${avatar(u, 'md')}<div style="flex:1;min-width:200px"><a href="#/user/${u.id}"><b>${esc(u.name)}</b></a>${badges(u)}<div class="muted small">${esc(u.title)} · 📍 ${esc(locStr(u) || '—')} · Member since ${monthYear(u.joined)}</div>${proxTag(u)}</div>
       ${own ? '' : `<a class="btn btn-outline btn-sm" href="#/messages/${u.id}">${t('common.message')}</a>`}</div>
@@ -899,7 +1078,7 @@ V.service = ([id], q) => {
     <div class="big" style="font-size:2rem;font-weight:700">${money(pk.price)}</div><p class="muted">${esc(pk.desc)}</p>
     <div><b>⏱ ${esc(pk.delivery)}</b> · ${pk.revisions} revisions</div>
     <ul>${FEATURE_NAMES.map((f, i) => `<li>${feat(pk.feats[i])} ${f}</li>`).join('')}</ul>
-    <button class="btn btn-primary btn-block" data-action="order" data-id="${s.id}" data-idx="${sel}" ${own ? 'disabled' : ''}>${t('common.order')} (${money(pk.price)})</button>
+    ${canPay(u) ? '' : `<p class="notice">${t('in.nopay')}</p>`}<button class="btn btn-primary btn-block" data-action="order" data-id="${s.id}" data-idx="${sel}" ${own || !canPay(u) ? 'disabled' : ''}>${t('common.order')} (${money(pk.price)})</button>
     <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-outline btn-sm" style="flex:1" data-action="wish" data-kind="service" data-id="${s.id}">${inWishlist('service', s.id) ? '♥ Saved' : '♡ Save'}</button>
     ${own ? '' : `<a class="btn btn-outline btn-sm" style="flex:1" href="#/messages/${u.id}">💬 ${t('common.message')}</a>`}</div>
   </div></aside></div>`;
@@ -932,7 +1111,7 @@ V.project = ([id]) => {
       <div style="text-align:right"><div class="price" style="font-size:1.3rem">${money(x.amount)}</div><div class="small muted">in ${x.days} day${x.days === 1 ? '' : 's'}</div></div></div>
       <p style="margin:12px 0">${esc(x.cover)}</p>
       <div style="display:flex;gap:8px;align-items:center">${statusTag(x.status)} <span class="muted small">${ago(x.created)}</span><span style="flex:1"></span>
-      ${isOwner ? `<a class="btn btn-outline btn-sm" href="#/messages/${s.id}">💬 Message</a>${p.status === 'open' ? `<button class="btn btn-primary btn-sm" data-action="award" data-id="${x.id}">Award project</button>` : ''}` : ''}</div></div>`; }).join('') : (isOwner ? empty('📭', 'No proposals yet. They will appear here and in your notifications.') : '')}
+      ${isOwner ? `<a class="btn btn-outline btn-sm" href="#/messages/${s.id}">💬 Message</a>${p.status === 'open' && canPay(p, s) ? `<button class="btn btn-primary btn-sm" data-action="award" data-id="${x.id}">Award project</button>` : ''}` : ''}</div></div>`; }).join('') : (isOwner ? empty('📭', 'No proposals yet. They will appear here and in your notifications.') : '')}
   </div>
   <aside><div class="card card-pad side-pkg">
     <div class="small muted">Budget</div><div style="font-size:1.8rem;font-weight:700">${money(p.budgetMin)}–${money(p.budgetMax)}</div>
@@ -982,9 +1161,9 @@ V.postProject = () => {
     <div class="field"><label>Project title</label><input name="title" required maxlength="100" placeholder="e.g. Design a logo for my bakery"></div>
     <div class="field"><label>Category</label><select name="category">${pickableCats().map(c => `<option value="${c.id}">${c.ico} ${esc(catName(c))}</option>`).join('')}</select></div>
     <div class="field"><label>Description</label><textarea name="description" required minlength="30" placeholder="Describe the task, what you expect to receive and any important details."></textarea></div>
-    <div class="row3"><div class="field"><label>Min budget (€)</label><input name="min" type="number" min="5" required></div><div class="field"><label>Max budget (€)</label><input name="max" type="number" min="5" required></div><div class="field"><label>Deadline</label><input name="deadline" required placeholder="e.g. 2 weeks"></div></div>
+    <div class="row3"><div class="field"><label>Min budget (${currency()})</label><input name="min" type="number" min="5" required></div><div class="field"><label>Max budget (${currency()})</label><input name="max" type="number" min="5" required></div><div class="field"><label>Deadline</label><input name="deadline" required placeholder="e.g. 2 weeks"></div></div>
     <div class="field"><label>Skills (comma separated)</label><input name="skills" placeholder="Logo design, Illustrator"></div>
-    <h3>📍 Where is the work?</h3>${locationFields(me().city || '', me().area || '', { required: true })}
+    <h3>📍 Where is the work?</h3>${locationFields(me().city || '', me().area || '', { required: true, state: me().state })}
     <label class="filter-opt" style="margin-bottom:16px"><input type="checkbox" name="remote"> This can be done remotely (online)</label>
     <button class="btn btn-primary">Publish project</button></form></div>`;
 };
@@ -999,7 +1178,7 @@ V.postService = () => {
     <div class="field"><label>Cover icon</label><select name="emoji">${['💻', '📱', '🎨', '🖌️', '✍️', '🌍', '📈', '🎬', '🎧', '💼', '🛠️', '📷'].map(e => `<option>${e}</option>`).join('')}</select></div></div>
     <div class="field"><label>Description</label><textarea name="description" required minlength="30"></textarea></div>
     <h3>Packages</h3><div class="table-wrap"><table class="pkg-table"><thead><tr><th></th>${defaults.map(d => `<th>${d[0]}</th>`).join('')}</tr></thead><tbody>
-      <tr><td>Price (€)</td>${defaults.map((d, i) => `<td><input name="price${i}" type="number" min="5" value="${d[1]}" required></td>`).join('')}</tr>
+      <tr><td>Price (${currency()})</td>${defaults.map((d, i) => `<td><input name="price${i}" type="number" min="5" value="${d[1]}" required></td>`).join('')}</tr>
       <tr><td>What's included</td>${defaults.map((d, i) => `<td><input name="desc${i}" required placeholder="Short description"></td>`).join('')}</tr>
       <tr><td>Delivery</td>${defaults.map((d, i) => `<td><input name="delivery${i}" value="${3 + i * 4} days" required></td>`).join('')}</tr>
       <tr><td>Revisions</td>${defaults.map((d, i) => `<td><input name="rev${i}" type="number" min="0" value="${1 + i * 2}" required></td>`).join('')}</tr>
@@ -1074,7 +1253,7 @@ V.dashboard = ([tab = 'overview']) => {
     <div class="row"><div class="field"><label>Name</label><input name="name" value="${esc(u.name)}" required></div><div class="field"><label>Email</label><input name="email" type="email" value="${esc(u.email)}" required></div></div>
     <div class="field"><label>Headline</label><input name="title" value="${esc(u.title)}"></div>
     <h3 style="margin-top:8px">📍 Your location</h3><p class="small muted" style="margin-top:-4px">Customers search by city and area, so freelancers nearby are shown first.</p>
-    ${locationFields(u.city || '', u.area || '', { required: true })}
+    ${locationFields(u.city || '', u.area || '', { required: true, state: u.state })}
     <label class="filter-opt" style="margin-bottom:12px"><input type="checkbox" name="isFreelancer" ${u.isFreelancer ? 'checked' : ''}> I offer services as a freelancer (show me in “Find freelancers”)</label>
     <div class="field"><label>Bio</label><textarea name="bio">${esc(u.bio)}</textarea></div>
     <div class="field"><label>Skills (comma separated)</label><input name="skills" value="${esc(u.skills.join(', '))}"></div>
@@ -1178,7 +1357,7 @@ V.notFound = () => `<div class="container">${empty('🧭', 'Page not found.', '<
 let OB = null; // the profile being edited, kept between steps
 function obInit(u) {
   if (OB && OB.userId === u.id) return;
-  OB = { userId: u.id, category: u.category || '', subcategories: [...u.subcategories], customSubcategories: [...(u.customSubcategories || [])], skills: [...u.skills], newCat: false, title: u.title || '', specialty: u.specialty || '',
+  OB = { userId: u.id, state: u.state || '', category: u.category || '', subcategories: [...u.subcategories], customSubcategories: [...(u.customSubcategories || [])], skills: [...u.skills], newCat: false, title: u.title || '', specialty: u.specialty || '',
     city: u.city || '', area: u.area || '', serviceAreas: [...u.serviceAreas], travelRadiusKm: u.travelRadiusKm || 15,
     tutorSubjects: [...u.tutorSubjects], tutorLevels: [...u.tutorLevels], pricingType: u.pricingType || 'HOURLY', priceAmount: u.priceAmount || '',
     priceUnitLabel: u.priceUnitLabel || '', servicePerks: [...u.servicePerks], weeklyAvailability: JSON.parse(JSON.stringify(u.weeklyAvailability || {})),
@@ -1192,7 +1371,7 @@ function obRead() {
   const f = new FormData(form), step = form.dataset.step;
   if (step === '1') {
     OB.category = f.get('category') || OB.category; OB.subcategories = f.getAll('subcategories'); OB.customSubcategories = splitList(f.get('customSubcategories')); OB.skills = splitList(f.get('skills')); OB.title = (f.get('title') || '').trim(); OB.specialty = (f.get('specialty') || '').trim();
-    if (form.querySelector('[name="city"]')) { OB.city = f.get('city') || ''; OB.area = f.get('area') || ''; OB.travelRadiusKm = +f.get('travelRadiusKm') || 15; OB.serviceAreas = [...new Set([...f.getAll('areas'), OB.area].filter(Boolean))]; }
+    if (form.querySelector('[name="city"]')) { OB.state = f.get('state') || OB.state; OB.city = f.get('city') || ''; OB.area = f.get('area') || ''; OB.travelRadiusKm = +f.get('travelRadiusKm') || 15; OB.serviceAreas = [...new Set([...f.getAll('areas'), OB.area].filter(Boolean))]; }
     if (form.querySelector('[name="subjectsOther"]')) { OB.tutorSubjects = [...f.getAll('subjects'), ...splitList(f.get('subjectsOther'))]; OB.tutorLevels = [...f.getAll('levels'), ...splitList(f.get('levelsOther'))]; }
   }
   if (step === '2') { OB.pricingType = f.get('pricingType') || 'HOURLY'; OB.priceAmount = f.get('priceAmount'); OB.priceUnitLabel = (f.get('priceUnitLabel') || '').trim(); OB.servicePerks = [...f.getAll('perks'), ...splitList(f.get('perksOther'))]; }
@@ -1231,21 +1410,21 @@ V.onboarding = (_, q) => {
       <p class="small muted">You can list yourself in it straight away. If you work at clients’ places, we check your ID before anyone can book you. Worklay may rename the category or merge it with a similar one.</p>
       <button type="button" class="btn btn-primary btn-sm" data-action="ob-createcat">Create category</button> <button type="button" class="btn btn-ghost btn-sm" data-action="ob-newcat">Cancel</button></div>` : ''}
     ${cat && cat.subcategories.length ? `<div class="field"><label>Which services exactly?</label><div class="chks">${cat.subcategories.map(x => chk('subcategories', x.id, esc(catName(x)), OB.subcategories.includes(x.id))).join('')}</div></div>` : ''}
-    ${cat ? `<div class="row"><div class="field"><label>Your own specialisations</label><input name="customSubcategories" value="${esc(OB.customSubcategories.join(', '))}" placeholder="e.g. Vintage furniture, Smart home setup"></div>
+    ${cat ? `<div class="row"><div class="field"><label>➕ Create your own subcategories</label><input name="customSubcategories" value="${esc(OB.customSubcategories.join(', '))}" placeholder="e.g. Vintage furniture, Smart home setup"><p class="small muted" style="margin:6px 0 0">Separate with commas, up to 8. Customers can find you by them straight away.</p></div>
       <div class="field"><label>Skills</label><input name="skills" value="${esc(OB.skills.join(', '))}" placeholder="e.g. Photoshop, First aid, Driving licence B"></div></div>
       <p class="small muted" style="margin-top:-6px">Separate with commas. Clients can search for all of these.</p>` : ''}
     <div class="row"><div class="field"><label>Headline</label><input name="title" maxlength="60" value="${esc(OB.title)}" placeholder="e.g. Wedding photographer"></div>
       <div class="field"><label>Your speciality</label><input name="specialty" maxlength="80" value="${esc(OB.specialty)}" placeholder="e.g. Natural-light portraits, Evening babysitting"></div></div>
-    ${cat && cat.id === 'tutoring' ? `<div class="field"><label>Subjects you teach</label><div class="chks">${TUTOR_SUBJECTS.map(x => chk('subjects', x, esc(x), OB.tutorSubjects.includes(x))).join('')}</div>
-        <input name="subjectsOther" style="margin-top:8px" value="${esc(OB.tutorSubjects.filter(x => !TUTOR_SUBJECTS.includes(x)).join(', '))}" placeholder="Other subjects, comma separated"></div>
-      <div class="field"><label>Classes / levels</label><div class="chks">${TUTOR_LEVELS.map(x => chk('levels', x, esc(x), OB.tutorLevels.includes(x))).join('')}</div>
-        <input name="levelsOther" style="margin-top:8px" value="${esc(OB.tutorLevels.filter(x => !TUTOR_LEVELS.includes(x)).join(', '))}" placeholder="Other classes or levels, comma separated"></div>` : ''}
-    ${cat && cat.serviceType !== 'REMOTE' ? `<h3 style="margin-top:8px">📍 Where do you work?</h3>${locationFields(OB.city, OB.area, { required: true })}
+    ${cat && cat.id === 'tutoring' ? `<div class="field"><label>Subjects you teach</label><div class="chks">${tutorSubjects().map(x => chk('subjects', x, esc(x), OB.tutorSubjects.includes(x))).join('')}</div>
+        <input name="subjectsOther" style="margin-top:8px" value="${esc(OB.tutorSubjects.filter(x => !tutorSubjects().includes(x)).join(', '))}" placeholder="Other subjects, comma separated"></div>
+      <div class="field"><label>Classes / levels</label><div class="chks">${tutorLevels().map(x => chk('levels', x, esc(x), OB.tutorLevels.includes(x))).join('')}</div>
+        <input name="levelsOther" style="margin-top:8px" value="${esc(OB.tutorLevels.filter(x => !tutorLevels().includes(x)).join(', '))}" placeholder="Other classes or levels, comma separated"></div>` : ''}
+    ${cat && cat.serviceType !== 'REMOTE' ? `<h3 style="margin-top:8px">📍 Where do you work?</h3>${locationFields(OB.city, OB.area, { required: true, state: OB.state })}
       <div class="field"><label>How far will you travel?</label><select name="travelRadiusKm">${[5, 10, 15, 25, 50, 100].map(k => `<option value="${k}" ${OB.travelRadiusKm === k ? 'selected' : ''}>Up to ${k} km</option>`).join('')}</select></div>
-      <div class="field"><label>Areas you cover</label><div class="chks" data-role="cover-areas">${areaChecks(OB.city, OB.serviceAreas)}</div><p class="small muted" style="margin:6px 0 0">Customers searching these areas will find you.</p></div>` : ''}`;
+      <div class="field"><label>Areas you cover</label><div class="chks" data-role="cover-areas">${areaChecks(OB.city, OB.serviceAreas, OB.state)}</div><p class="small muted" style="margin:6px 0 0">Customers searching these areas will find you.</p></div>` : ''}`;
   if (step === '2') body = `<h2>How do you charge?</h2>
     <div class="row3">${Object.entries(PRICING).map(([k, [label, unit]]) => `<label class="choice"><input type="radio" name="pricingType" value="${k}" data-rerender ${OB.pricingType === k ? 'checked' : ''}> ${label}<small class="muted" style="display:block">${unit}</small></label>`).join('')}</div>
-    <div class="row" style="margin-top:14px"><div class="field"><label>Price (€)</label><input name="priceAmount" type="number" min="1" step="0.5" value="${esc(OB.priceAmount)}" placeholder="${OB.pricingType === 'HOURLY' ? '25' : '150'}"></div>
+    <div class="row" style="margin-top:14px"><div class="field"><label>Price (${currency()})</label><input name="priceAmount" type="number" min="1" step="0.5" value="${esc(OB.priceAmount)}" placeholder="${OB.pricingType === 'HOURLY' ? '25' : '150'}"></div>
       <div class="field"><label>Shown as</label><input name="priceUnitLabel" maxlength="40" value="${esc(OB.priceUnitLabel)}" placeholder="${PRICING[OB.pricingType][1]}${OB.pricingType === 'PER_EVENT' ? ', e.g. per 2-hour shoot' : ''}"></div></div>
     <p class="small muted" style="margin-top:-6px">${OB.pricingType === 'HOURLY' ? 'Clients book in multiples of your slot length and pay for the hours they book.' : 'Clients book one slot and pay this fixed price.'} Worklay keeps ${Math.round(PLATFORM_FEE * 100)}%.</p>
     ${cat ? `<div class="field"><label>What’s included?</label><div class="chks">${[...new Set([...(cat.perks || []), ...OB.servicePerks])].map(x => chk('perks', x, esc(x), OB.servicePerks.includes(x))).join('')}</div>
@@ -1275,7 +1454,7 @@ function verificationPanel(u, cat = catById(u.category)) {
   const head = st === 'verified' ? '<p class="verified" style="font-size:1.05rem">✓ You are verified. The badge is shown on your profile.</p>'
     : st === 'pending' ? '<p><span class="tag">⏳ Under review</span> We usually check documents within one business day.</p>'
     : st === 'rejected' ? `<p class="tag orange">A document was not approved${u.verification.reason ? ': ' + esc(u.verification.reason) : ''}. Please upload it again.</p>` : '';
-  const row = (type, isOptional) => { const d = latest[type], [label, hint] = DOC_INFO[type];
+  const row = (type, isOptional) => { const d = latest[type], label = DOC_INFO[type][0], hint = docHelp(type);
     return `<div class="doc-row"><div><b>${label}</b>${isOptional ? ' <span class="small muted">(optional)</span>' : ''}<div class="small muted">${hint}</div>
       ${d ? `<div class="small" style="margin-top:4px">${{ PENDING: '<span class="tag">⏳ Pending review</span>', APPROVED: '<span class="tag green">✓ Approved</span>', REJECTED: '<span class="tag orange">Not approved</span>' }[d.status]} <span class="muted">uploaded ${ago(d.uploaded)}${d.status === 'REJECTED' && d.reason ? ' · ' + esc(d.reason) : ''}</span></div>` : ''}</div>
       ${!d || d.status === 'REJECTED' ? `<form class="doc-form" id="doc-form-${type}"><input type="hidden" name="documentType" value="${type}"><input type="file" name="doc" accept="image/jpeg,image/png,image/webp,application/pdf" required><button class="btn btn-primary btn-sm">Upload</button></form>` : ''}</div>`; };
@@ -1285,7 +1464,10 @@ function verificationPanel(u, cat = catById(u.category)) {
 
 /* ---------- booking card on the public profile ---------- */
 let BK = { fid: null };
+const noPayNote = u => `<div class="card card-pad book-card"><h3 style="margin:0 0 6px">${esc(u.name.split(' ')[0])}</h3>${priceText(u) ? `<div class="price-line"><b>${priceText(u)}</b></div>` : ''}<p class="notice">${t('in.nopay')}</p><a class="btn btn-join btn-block" href="#/messages/${u.id}">💬 ${t('common.message')}</a></div>`;
+const canPay = (...people) => [site, ...people.map(countryOf)].every(c => c === 'EE');
 function bookCard(u) {
+  if (!canPay(u)) return noPayNote(u);
   const cat = catById(u.category), today = localNow().date;
   if (BK.fid !== u.id) BK = { fid: u.id, date: '', duration: 0, start: '', slots: [], options: [], price: 0, reason: '' };
   if (!BK.date) { for (let i = 1; i <= 21 && !BK.date; i++) if ((u.weeklyAvailability[weekdayKey(addDays(today, i))] || []).length) BK.date = addDays(today, i); BK.date = BK.date || addDays(today, 1); }
@@ -1408,13 +1590,19 @@ function adminCategories() {
     <div class="cat-actions"><button class="btn btn-primary btn-sm">${c.status === 'NEW' ? 'Approve' : 'Save'}</button>
       ${c.id.startsWith('own-') ? `<select name="mergeTarget" aria-label="Merge into"><option value="">Merge into…</option>${CATEGORIES.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button type="button" class="btn btn-outline btn-sm" data-action="cat-merge" data-id="${c.id}">Merge</button>` : ''}</div></form>`;
   const fresh = CATEGORIES.filter(c => c.status === 'NEW'), rest = CATEGORIES.filter(c => c.status !== 'NEW');
+  const own = {}; // subcategories created by freelancers, in any country
+  db.users.filter(x => x.isFreelancer).forEach(x => (x.customSubcategories || []).forEach(n => { const k = x.category + '|' + n.toLowerCase(); (own[k] = own[k] || { cat: x.category, name: n, users: 0, where: new Set() }).users++; own[k].where.add(countryOf(x)); }));
+  const subRow = o => `<form class="card card-pad sub-row" data-cat="${esc(o.cat)}" data-own="${esc(o.name)}" style="margin-bottom:12px"><b>${esc(o.name)}</b> <span class="small muted">in ${esc(catById(o.cat).name)} · ${o.users} freelancer${o.users === 1 ? '' : 's'} · ${[...o.where].join(', ')}</span>
+    <div class="row3" style="margin-top:10px"><div class="field"><label>English</label><input name="name" required maxlength="40" value="${esc(o.name)}"></div><div class="field"><label>Estonian</label><input name="nameEt" required maxlength="40" value="${esc(o.name)}"></div><div class="field"><label>Russian</label><input name="nameRu" required maxlength="40" value="${esc(o.name)}"></div></div>
+    <button class="btn btn-primary btn-sm">Make official</button></form>`;
   return `<div class="container" style="padding-top:36px"><a href="#/admin">← Admin panel</a><h1>Categories</h1>
     <p class="muted">New categories from freelancers already work in search. Approve them to show them on the home page and to search engines, or merge them into a similar one.</p>
-    <h2>New (${fresh.length})</h2>${fresh.map(row).join('') || '<p class="muted">Nothing new.</p>'}<h2 style="margin-top:24px">All categories</h2>${rest.map(row).join('')}</div>`;
+    <h2>Subcategories from freelancers (${Object.keys(own).length})</h2><p class="small muted">They already work in search. “Make official” offers them to everyone in that category.</p>${Object.values(own).sort((a, b) => b.users - a.users).map(subRow).join('') || '<p class="muted">None yet.</p>'}
+    <h2 style="margin-top:24px">New (${fresh.length})</h2>${fresh.map(row).join('') || '<p class="muted">Nothing new.</p>'}<h2 style="margin-top:24px">All categories</h2>${rest.map(row).join('')}</div>`;
 }
 
 /* ---------- router ---------- */
-const ROUTES = { '': V.home, freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, terms: () => termsPage(lang, { fee: PLATFORM_FEE, days: APPROVAL_DAYS }), privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
+const ROUTES = { '': V.home, countries: V.countries, ...Object.fromEntries(Object.values(COUNTRIES).filter(c => c.code !== 'EE').map(c => [c.slug, V.country(c.code)])), freelancers: V.freelancers, services: V.services, projects: V.projects, service: V.service, project: V.project, user: V.user, 'post-project': V.postProject, 'post-service': V.postService, dashboard: V.dashboard, onboarding: V.onboarding, notifications: V.notifications, messages: V.messages, wishlist: V.wishlist, admin: V.admin, about: V.about, contact: V.contact, terms: V.terms, privacy: () => privacyPage(lang), cookies: () => cookiesPage(lang), blog: (a, q) => a.length ? V.blogPost(a, q) : V.blog() };
 // The page address: a real path (/freelancers?cat=x), or a hash for old links (/#/freelancers).
 const currentPath = () => (location.hash.startsWith('#/') ? location.hash.slice(1) : location.pathname + location.search);
 const toPath = h => '/' + String(h).replace(/^#?\/?/, '');
@@ -1426,10 +1614,15 @@ function parseHash() {
 function render() {
   if (!db) return;
   const { name, args, q } = parseHash();
+  pickSite(name, args);
+  if (!geoReady(site)) { const want = site; loadGeo(want).catch(() => { GEO[want] = { regions: [] }; }).then(() => render()); return; } // draws again once the places are there
+  const inRegion = countryRoute(name) && regionBySlug(args[0]);
+  if (inRegion && site !== 'EE' && !PLACES[`${site}/${inRegion.slug}`]) { loadPlaces(inRegion.slug).then(() => render()); return; }
+  chooseLang();
   const view = ROUTES[name] || V.notFound;
   renderHeader();
   const u = me(), bar = u && u.termsAccepted === false && name !== 'terms' ? '<div class="container"><div class="notice terms-bar">Our Terms of Service were updated. <button type="button" class="link-btn" data-action="terms-review">Review and accept</button></div></div>' : '';
-  try { $('#app').innerHTML = bar + view(args, q); if ($('#book-card')) loadSlots(); }
+  try { $('#app').innerHTML = bar + view(args, q); if ($('#book-card')) loadSlots(); loadFormPlaces(); }
   catch (err) {
     console.error(err);
     $('#app').innerHTML = `<div class="container">${empty('⚠️', 'Something went wrong showing this page.', '<a class="btn btn-primary" href="#/">Go to homepage</a>')}</div>`;
@@ -1489,29 +1682,35 @@ const A = {
     }
     lang = el.dataset.lang;
     try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
-    document.documentElement.lang = lang;
+    if (me() && me().lang !== lang) { me().lang = lang; api('profile/language', { lang }).catch(() => {}); } // also remembered in the account
     render();
     renderCookieBanner();
   },
+  'more-areas': el => { el.parentElement.innerHTML = (citiesOf(el.dataset.state)[el.dataset.city] || []).map(a => areaChip(el.dataset.state, el.dataset.city, a)).join(''); },
+  'all-cities': el => { const all = Object.keys(citiesOf(el.dataset.state)).sort((a, b) => a.localeCompare(b)); el.closest('p').outerHTML = `<div class="all-cities">${all.map(c => `<a href="${placeLink(el.dataset.state, c)}">${esc(c)}</a>`).join('')}</div>`; },
+  'set-country': el => { switchCountry(el.dataset.country); },
   'cookie-settings': () => openCookieSettings(),
   reload: () => location.reload(),
   'cookie-accept': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, true]))),
   'cookie-reject': () => saveConsent({}),
   login: () => openLogin(),
   'google-auth': () => {
+    if (needCountry()) { openAuth('signup'); return; } // a new account needs a country
     const picked = document.querySelector('#signup-form input[name="intent"]:checked');
-    location.href = API_URL.replace(/\?.*$/, '') + '/auth/google?intent=' + (picked ? picked.value : 'hire');
+    location.href = API_URL.replace(/\?.*$/, '') + '/auth/google?intent=' + (picked ? picked.value : 'hire') + `&country=${site}&lang=${lang}`;
   },
   logout: () => act('auth/logout', {}, 'You have been logged out.', { after: () => { go('#/'); render(); } }),
   signup: el => openAuth('signup', el && el.dataset.intent),
   'toggle-filters': () => { const f = $('.filters'); if (f) { f.classList.toggle('open'); if (f.classList.contains('open')) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); } },
   'clear-filter': el => { const { key, val } = el.dataset, q = parseHash().q;
-    if (key === 'sub') setQuery({ sub: (q.sub || '').split(',').filter(c => c && c !== val).join(',') });
+    if (key === 'own') setQuery({ own: splitOwn(q).filter(n => n !== val).join(',') });
+    else if (key === 'sub') setQuery({ sub: (q.sub || '').split(',').filter(c => c && c !== val).join(',') });
     else if (key === 'cat') { const drop = (catById(val).subcategories || []).map(x => x.id); setQuery({ cat: (q.cat || '').split(',').filter(c => c && c !== val).join(','), sub: (q.sub || '').split(',').filter(x => x && !drop.includes(x)).join(',') }); }
     else if (key === 'city') setQuery({ city: '', area: '' });
+    else if (key === 'state') setQuery({ state: '', city: '', area: '' });
     else setQuery({ [key]: '' }); },
   'toggle-pw': el => { const i = el.parentElement.querySelector('input'); const show = i.type === 'password'; i.type = show ? 'text' : 'password'; el.textContent = show ? t('auth.hide') : t('auth.show'); },
-  'near-me': () => { const u = me(); setQuery({ city: u.city, area: u.area }); },
+  'near-me': () => { const u = me(); setQuery({ state: u.state || '', city: u.city, area: u.area }); },
   widen: () => setQuery({ area: '' }),
   'auth-tab': el => openAuth(el.dataset.mode),
   'close-modal': () => closeModal(),
@@ -1631,6 +1830,14 @@ document.addEventListener('change', e => {
   if (e.target.id === 'bk-duration') { BK.duration = +e.target.value; BK.start = ''; loadSlots(); return; }
   if (e.target.id === 'bk-date') { BK.date = e.target.value; BK.start = ''; loadSlots(); return; }
   if (e.target.dataset.action === 'sort') setQuery({ sort: e.target.value });
+  if (e.target.id === 'home-country') { if (e.target.value) switchCountry(e.target.value); return; }
+  if (e.target.id === 'home-lang') { setLang(e.target.value); if (me()) { me().lang = e.target.value; api('profile/language', { lang: e.target.value }).catch(() => {}); } render(); renderCookieBanner(); return; }
+  if (['state', 'city'].includes(e.target.dataset.role) && abroad()) { // refill the suggestions below it
+    const form = e.target.form, at = r => form.querySelector(`[data-role="${r}"]`), state = at('state').value;
+    if (e.target.dataset.role === 'state') { at('city').value = ''; at('area').value = ''; }
+    loadPlaces(state).then(() => { fillPlaces(form); if (at('cover-areas')) at('cover-areas').innerHTML = areaChecks(at('city').value, [], state); });
+    return;
+  }
   if (e.target.dataset.role === 'city') { // refill the area list (and "areas you cover") for the chosen city
     const cover = e.target.form && e.target.form.querySelector('[data-role="cover-areas"]');
     if (cover) cover.innerHTML = areaChecks(e.target.value);
@@ -1639,6 +1846,17 @@ document.addEventListener('change', e => {
     areaSel.innerHTML = `<option value="">${areaSel.dataset.any ? t('loc.allAreas') : t('loc.selectArea')}</option>` + areas.map(a => `<option>${a}</option>`).join('');
     areaSel.disabled = !areas.length;
   }
+});
+// Suggestions follow what is typed.
+document.addEventListener('input', e => {
+  const role = e.target.dataset && e.target.dataset.role, form = e.target.form;
+  if ((role === 'city' || role === 'area') && abroad() && form) fillPlaces(form);
+  if (role === 'cover-search' && form) {
+    const box = form.querySelector('[data-role="cover-areas"]'), st = form.querySelector('[data-role="state"]'), chosen = [...box.querySelectorAll('input[name="areas"]:checked')].map(x => x.value), text = e.target.value;
+    box.innerHTML = areaChecks(form.querySelector('[data-role="city"]').value, chosen, st ? st.value : '', text);
+    const s = box.querySelector('[data-role="cover-search"]'); if (s) { s.focus(); s.setSelectionRange(text.length, text.length); }
+  }
+  if (e.target.id === 'place-search') { const st = e.target.dataset.state, text = e.target.value.trim(); $('#place-results').innerHTML = text.length > 1 ? searchPlaces(st, text) : placeCards(st, 48); }
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -1713,17 +1931,18 @@ document.addEventListener('submit', e => {
     if (!file || !file.size) return toast('Please choose a file.', 'error');
     if (file.size > 5 * 1024 * 1024) return toast('The file is too large (max 5 MB).', 'error');
     act('verification/document', f, 'Document uploaded ✓ We’ll review it soon.'); return; }
+  if (form.classList.contains('sub-row')) { e.preventDefault(); act('admin/subcategory', { category: form.dataset.cat, own: form.dataset.own, name: f.get('name'), nameEt: f.get('nameEt'), nameRu: f.get('nameRu') }, 'Subcategory added ✓'); return; }
   if (form.classList.contains('cat-row')) { e.preventDefault(); act('admin/category', { id: form.dataset.id, action: 'save', name: f.get('name'), nameEt: f.get('nameEt'), nameRu: f.get('nameRu'), requiresVerification: !!f.get('requiresVerification') }, 'Category saved ✓'); return; }
   const handlers = {
     'problem-form': () => sendProof(form, f, 'payment/problem', 'Thanks. Worklay will look at it.'),
     'proof-form': () => sendProof(form, f, 'payment/proof', 'Proof added ✓'),
     'cookie-form': () => saveConsent(Object.fromEntries(OPTIONAL_CATEGORIES.map(k => [k, !!f.get(k)]))),
     'hero-search': () => { const q = { q: f.get('q'), city: f.get('city') }; Object.keys(q).forEach(k => !q[k] && delete q[k]); go(`#/${f.get('type')}?` + new URLSearchParams(q)); },
-    filters: () => { const q = { q: f.get('q'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), sub: f.getAll('sub').filter(id => f.getAll('cat').some(c => (catById(c).subcategories || []).some(x => x.id === id))).join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };
+    filters: () => { const q = { q: f.get('q'), state: f.get('state'), city: f.get('city'), area: f.get('city') ? f.get('area') : '', remote: f.get('remote'), cat: f.getAll('cat').join(','), sub: f.getAll('sub').filter(id => f.getAll('cat').some(c => (catById(c).subcategories || []).some(x => x.id === id))).join(','), own: [...form.querySelectorAll('[name="own"]:checked')].filter(x => f.getAll('cat').includes(x.dataset.cat)).map(x => x.value).join(','), min: f.get('min'), max: f.get('max'), verified: f.get('verified'), open: f.get('open'), subject: f.get('subject'), level: f.get('level'), time: f.get('time'), urgent: f.get('urgent') };
       Object.keys(q).forEach(k => !q[k] && delete q[k]); const { name } = parseHash(); go(`#/${name}?` + new URLSearchParams(q)); },
     'project-form': () => {
       if (+f.get('max') < +f.get('min')) return toast('Max budget must be greater than min budget.');
-      act('project/create', { title: f.get('title'), category: f.get('category'), description: f.get('description'), min: f.get('min'), max: f.get('max'), deadline: f.get('deadline'), skills: f.get('skills'), city: f.get('city'), area: f.get('area'), remote: !!f.get('remote') },
+      act('project/create', { title: f.get('title'), category: f.get('category'), description: f.get('description'), min: f.get('min'), max: f.get('max'), deadline: f.get('deadline'), skills: f.get('skills'), state: f.get('state') || '', city: f.get('city'), area: f.get('area'), remote: !!f.get('remote') },
         'Project published! Freelancers can now send proposals.', { after: r => go('#/project/' + r.id) }); },
     'service-form': () => act('service/create', {
         title: f.get('title'), category: f.get('category'), emoji: f.get('emoji'), description: f.get('description'),
@@ -1731,7 +1950,7 @@ document.addEventListener('submit', e => {
       }, 'Service published!', { after: r => go('#/service/' + r.id) }),
     'chat-form': () => { const text = (f.get('text') || '').trim(); if (!text) return;
       act('message/send', { to: form.dataset.to, text }, null, { after: () => { render(); const i = $('#chat-form input'); i && i.focus(); } }); },
-    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), bio: f.get('bio'), skills: f.get('skills') }, 'Profile saved'),
+    'settings-form': () => act('profile/update', { name: f.get('name'), email: f.get('email'), title: f.get('title'), state: f.get('state') || '', city: f.get('city'), area: f.get('area'), isFreelancer: !!f.get('isFreelancer'), bio: f.get('bio'), skills: f.get('skills') }, 'Profile saved'),
     'contact-form': () => act('contact/send', { name: f.get('name'), email: f.get('email'), subject: f.get('subject'), message: f.get('message') },
       'Thanks! We’ll get back to you within one business day.', { after: () => form.reset() }),
 
@@ -1740,8 +1959,7 @@ document.addEventListener('submit', e => {
 });
 
 /* ---------- boot ---------- */
-[lang] = detectLang();
-document.documentElement.lang = lang;
+chooseLang();
 renderCookieBanner();
 tickClock();
 { const c = readConsent(); if (c) { activateConsentedScripts(c); window.dispatchEvent(new CustomEvent('worklay:consent', { detail: { ...c } })); } }
@@ -1749,7 +1967,7 @@ $('#burger').onclick = () => $('#burger').setAttribute('aria-expanded', String($
 $('#year').textContent = new Date().getFullYear();
 lastRoute = currentPath().split('?')[0];
 $('#app').innerHTML = `<div class="container" style="padding-top:40px" aria-busy="true"><div class="skeleton" style="height:56px;max-width:520px;margin-bottom:16px"></div><div class="skeleton" style="height:22px;max-width:380px;margin-bottom:36px"></div><div class="grid">${'<div class="skeleton" style="height:230px"></div>'.repeat(4)}</div></div>`;
-refresh().then(() => { render(); handleGoogleReturn(); }, err => {
+refresh().then(() => { render(); renderCookieBanner(); handleGoogleReturn(); if (needCountry() && parseHash().name === '') openCountryChooser(); }, err => {
   $('#app').innerHTML = `<div class="container">${empty('⚠️', esc(err.message), '<button class="btn btn-primary" data-action="reload">Try again</button>')}</div>`;
 });
 
